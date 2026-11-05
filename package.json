@@ -1,0 +1,131 @@
+{
+  "name": "nemotron-coding-agent",
+  "displayName": "Nemotron Coding Agent",
+  "description": "A workspace-aware coding agent powered by NVIDIA Nemotron. Review and approve file edits and terminal commands.",
+  "version": "0.1.1",
+  "publisher": "rjryt",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "nvidia",
+    "nemotron",
+    "coding-agent",
+    "agent",
+    "chat"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:nemotronAgent.chatView",
+    "onCommand:nemotronAgent.setApiKey",
+    "onCommand:nemotronAgent.newChat"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "nemotronAgent",
+          "title": "Nemotron Agent",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "nemotronAgent": [
+        {
+          "type": "webview",
+          "id": "nemotronAgent.chatView",
+          "name": "Coding Agent",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "nemotronAgent.setApiKey",
+        "title": "Nemotron Agent: Set NVIDIA API Key"
+      },
+      {
+        "command": "nemotronAgent.clearApiKey",
+        "title": "Nemotron Agent: Clear NVIDIA API Key"
+      },
+      {
+        "command": "nemotronAgent.newChat",
+        "title": "Nemotron Agent: New Chat"
+      },
+      {
+        "command": "nemotronAgent.focus",
+        "title": "Nemotron Agent: Focus Chat"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "nemotronAgent.newChat",
+          "when": "view == nemotronAgent.chatView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Nemotron Agent",
+      "properties": {
+        "nemotronAgent.model": {
+          "type": "string",
+          "default": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+          "description": "NVIDIA NIM model ID."
+        },
+        "nemotronAgent.baseUrl": {
+          "type": "string",
+          "default": "https://integrate.api.nvidia.com/v1",
+          "description": "OpenAI-compatible API base URL."
+        },
+        "nemotronAgent.maxTokens": {
+          "type": "integer",
+          "default": 16384,
+          "minimum": 1024,
+          "maximum": 65536,
+          "description": "Maximum output tokens per model turn. Reasoning tokens are included."
+        },
+        "nemotronAgent.reasoning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Nemotron thinking/reasoning."
+        },
+        "nemotronAgent.maxToolRounds": {
+          "type": "integer",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Maximum consecutive tool-calling rounds per user request."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.2.1",
+    "typescript": "^5.7.3"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Workspace browsing is available, but file edits and shell commands require a trusted workspace."
+    }
+  }
+}
