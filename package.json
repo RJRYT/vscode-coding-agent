@@ -2,7 +2,7 @@
   "name": "nemotron-coding-agent",
   "displayName": "Nemotron Coding Agent",
   "description": "A workspace-aware coding agent powered by NVIDIA Nemotron. Review and approve file edits and terminal commands.",
-  "version": "0.1.7",
+  "version": "0.1.9",
   "icon": "media/extension-icon.png",
   "publisher": "rjryt",
   "license": "SEE LICENSE IN LICENSE",
@@ -115,14 +115,22 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
     "vscode:prepublish": "npm run compile",
     "package": "vsce package"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
     "@types/vscode": "^1.95.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.7.3",
     "@vscode/vsce": "^3.2.1",
-    "typescript": "^5.7.3"
+    "vitest": "^2.0.5",
+    "jsdom": "^24.1.0"
   },
   "extensionKind": [
     "workspace"

@@ -1,0 +1,76 @@
+import * as vscode from 'vscode';
+
+export const API_KEY_SECRET = 'nemotronAgent.nvidiaApiKey';
+export const MODEL_DEFAULT = 'nvidia/nemotron-3.5-super-vl-120b-a12b';
+export const BASE_URL_DEFAULT = 'https://integrate.api.nvidia.com/v1';
+export const MAX_TOKENS_DEFAULT = 16384;
+export const REASONING_DEFAULT = true;
+export const MAX_TOOL_ROUNDS_DEFAULT = 8;
+
+export const EXCLUDES =
+  '**/{node_modules,.git,dist,build,out,.next,coverage,vendor}/**,**/.env*,**/*.{pem,key,p12,pfx}';
+
+export const MAX_FILE_READ_BYTES = 120_000;
+export const MAX_FILE_EDIT_BYTES = 250_000;
+export const MAX_FILE_REPLACE_BYTES = 200_000;
+export const MAX_SEARCH_FILE_BYTES = 512 * 1024;
+export const MAX_SEARCH_TOTAL_BYTES = 20 * 1024 * 1024;
+export const MAX_SEARCH_FILES = 2500;
+export const MAX_SEARCH_RESULT_LIMIT = 60;
+export const MAX_COMMAND_LENGTH = 1200;
+export const COMMAND_TIMEOUT_MS = 120_000;
+export const COMMAND_MAX_BUFFER = 1024 * 1024;
+export const APPROVAL_TIMEOUT_MS = 5 * 60_000;
+
+export interface NemotronAgentConfig {
+  model: string;
+  baseUrl: string;
+  maxTokens: number;
+  reasoning: boolean;
+  maxToolRounds: number;
+}
+
+export function getNemotronAgentConfig(): NemotronAgentConfig {
+  const config = vscode.workspace.getConfiguration('nemotronAgent');
+  return {
+    model: config.get<string>('model', MODEL_DEFAULT),
+    baseUrl: config.get<string>('baseUrl', BASE_URL_DEFAULT).replace(/\/$/, ''),
+    maxTokens: config.get<number>('maxTokens', MAX_TOKENS_DEFAULT),
+    reasoning: config.get<boolean>('reasoning', REASONING_DEFAULT),
+    maxToolRounds: config.get<number>('maxToolRounds', MAX_TOOL_ROUNDS_DEFAULT),
+  };
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string | null;
+  tool_call_id?: string;
+  tool_calls?: ToolCall[];
+  name?: string;
+}
+
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface ModelResponse {
+  content: string;
+  reasoning: string;
+  toolCalls: ToolCall[];
+}
+
+export interface ApprovalPayload {
+  id: string;
+  kind: 'file' | 'command';
+  title: string;
+  summary: string;
+  path?: string;
+  oldPreview?: string;
+  newPreview?: string;
+  command?: string;
+}
