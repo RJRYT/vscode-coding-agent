@@ -1,0 +1,54 @@
+import { describe, expect, it } from 'vitest';
+import { applyExactTextPatches, createPatchPreview } from '../src/patchEngine';
+
+describe('applyExactTextPatches', () => {
+  it('changes only exact targeted sections and preserves surrounding content', () => {
+    const source = 'before\nconst greeting = "hello";\nafter\nconst count = 1;\n';
+    const result = applyExactTextPatches(source, [
+      { oldText: 'const greeting = "hello";', newText: 'const greeting = "hi";' },
+      { oldText: 'const count = 1;', newText: 'const count = 2;' },
+    ]);
+    expect(result.text).toBe('before\nconst greeting = "hi";\nafter\nconst count = 2;\n');
+  });
+
+  it('rejects anchors that do not match', () => {
+    expect(() =>
+      applyExactTextPatches('const a = 1;', [
+        { oldText: 'const b = 2;', newText: 'const b = 3;' },
+      ])
+    ).toThrow(/could not be matched/);
+  });
+
+  it('rejects ambiguous anchors', () => {
+    expect(() =>
+      applyExactTextPatches('x();\nx();', [{ oldText: 'x();', newText: 'y();' }])
+    ).toThrow(/ambiguous/);
+  });
+
+  it('rejects overlapping edits', () => {
+    expect(() =>
+      applyExactTextPatches('abcdef', [
+        { oldText: 'abc', newText: 'ABC' },
+        { oldText: 'cde', newText: 'CDE' },
+      ])
+    ).toThrow(/overlap/);
+  });
+
+  it('rejects full-file replacement', () => {
+    expect(() =>
+      applyExactTextPatches('const a = 1;', [
+        { oldText: 'const a = 1;', newText: 'const a = 2;' },
+      ])
+    ).toThrow(/replacement is blocked/);
+  });
+
+  it('shows only the targeted hunks in the approval preview', () => {
+    const result = applyExactTextPatches('top\nconst a = 1;\nbottom', [
+      { oldText: 'const a = 1;', newText: 'const a = 2;' },
+    ]);
+    const preview = createPatchPreview(result.patches);
+    expect(preview.oldPreview).toContain('const a = 1;');
+    expect(preview.oldPreview).not.toContain('top');
+    expect(preview.newPreview).toContain('const a = 2;');
+  });
+});

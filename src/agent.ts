@@ -144,13 +144,20 @@ export class AgentLoop {
 
     const system = this.systemPrompt(config);
 
+    let appliedFileEdit = false;
     for (let round = 0; round <= config.maxToolRounds; round++) {
       if (signal.aborted) throw new Error('The operation was aborted.');
       const messages: ChatMessage[] = [
         { role: 'system', content: system },
         ...this.history,
       ];
-      this.post({ type: 'status', text: round === 0 ? 'Nemotron is thinking…' : 'Working with workspace tools…' });
+      this.post({
+        type: 'status',
+        text: appliedFileEdit
+          ? 'File saved · Nemotron is reviewing the changes…'
+          : round === 0 ? 'Nemotron is thinking…' : 'Working with workspace tools…',
+      });
+      appliedFileEdit = false;
       const response = await model.request(signal, messages, this.tools.toolDefinitions());
 
       const assistantMessage: ChatMessage = {
@@ -189,6 +196,10 @@ export class AgentLoop {
         try {
           const toolResult: ToolResult = await this.executeTool(name, args);
           result = toolResult.content;
+          if (name === 'propose_file_edit' && !toolResult.isError && /successfully (applied|created)/i.test(result)) {
+            appliedFileEdit = true;
+            this.post({ type: 'status', text: 'Changes saved · checking the updated code…' });
+          }
         } catch (error) {
           result = `Tool error: ${error instanceof Error ? error.message : String(error)}`;
         }
@@ -216,12 +227,12 @@ RULES:
 - Inspect relevant files before proposing changes. Search before guessing.
 - Make focused, complete changes that fit the existing architecture, naming, formatting, and dependencies.
 - Never claim a change was made unless propose_file_edit completed successfully.
-- Use propose_file_edit for every file creation or modification. It requires explicit user approval. Never attempt to modify files through terminal commands, scripts, or other indirect means.
+- Use propose_file_edit for every file creation or modification. Existing files MUST use edits: [{ oldText, newText }] with exact unique snippets. Never send the full contents of an existing file; full-file replacement is blocked. Only use createContent when creating a brand-new file. Every oldText must match exactly once in the current file. Include enough surrounding context to make anchors unique, but keep each edit focused. If an anchor is missing or ambiguous, read the file again and prepare a better anchor. For insertions, use a unique anchor and include the unchanged anchor in newText with the insertion placed before or after it. Keep the number of edits small and preserve all unrelated code. The user approves each patch before it is atomically applied and verified.
 - Use run_terminal_command only for necessary checks, builds, tests, lint, or type-check commands. It requires user approval. Never use terminal commands to install packages or edit, delete, overwrite, or move source files.
 - Do not run destructive commands, install global packages, access secrets, or operate outside the opened workspace. If a task appears to need a destructive action, explain and ask first rather than issuing it.
 - Read only the files needed for the task. Avoid dependency folders, generated output, secrets, and environment files.
-- Prefer minimal diffs. Preserve unrelated user changes.
-- After edits, run relevant tests/build/lint when appropriate and summarize exact files changed and checks performed.
+- Prefer minimal exact-match patches. Do not regenerate, truncate, or rewrite entire existing files. Never make broad replacement edits to avoid a local change. Preserve unrelated user changes.
+- After each approved edit, wait for the tool's save and disk-verification result before claiming success. Then run relevant tests/build/lint when appropriate and summarize exact files changed and checks performed.
 - If requirements are unclear, ask one concise question; otherwise make a reasonable, clearly stated assumption.
 - Be direct. Do not dump entire files into chat unless needed.`;
   }
@@ -238,7 +249,12 @@ RULES:
       case 'search_workspace':
         return this.tools.searchWorkspace(toolArgs.query as string, toolArgs.glob as string | undefined, toolArgs.limit as number | undefined);
       case 'propose_file_edit':
-        return this.tools.proposeFileEdit(toolArgs.path as string, toolArgs.content as string, toolArgs.summary as string);
+        return this.tools.proposeFileEdit(
+          toolArgs.path as string,
+          toolArgs.edits as Array<{ oldText: string; newText: string }> | undefined,
+          toolArgs.createContent as string | undefined,
+          toolArgs.summary as string
+        );
       case 'run_terminal_command':
         return this.tools.runCommand(toolArgs.command as string, toolArgs.reason as string);
       default:

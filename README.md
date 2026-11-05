@@ -1,55 +1,82 @@
 # Nemotron Coding Agent for VS Code
 
-A VS Code sidebar coding agent powered by NVIDIA Nemotron 3.5 Super VL 120B A12B. It can inspect your workspace, search code, propose file changes, and run approved checks/commands.
+A VS Code workspace coding agent powered by NVIDIA Nemotron 3.5 Super VL 120B A12B. It can inspect your project, search code, prepare targeted patches, and run approved checks.
 
-## Features
+## 0.2.2 webview startup fix
 
-- NVIDIA NIM streaming chat with Nemotron reasoning support.
-- Workspace file listing, stable-API text search, file reading, and active-editor/selection context.
-- Agent tool-calling loop (up to the configured tool-round limit).
-- File creation/updates are previewed and require your approval.
-- Terminal commands require your approval and run from the workspace root.
-- NVIDIA API key is stored using VS Code Secret Storage, not in webview JavaScript or settings.
-- Configurable model endpoint, output-token budget, reasoning mode, and tool-call limit.
+- Fixed a critical startup bug in the embedded webview script. HTML is now built with `String.raw`, preserving regular-expression and string escapes in the inline JavaScript. Without this, the Markdown link matcher became an invalid regular expression at runtime, preventing **all** UI event handlers from registering and leaving the chat-history screen unresponsive.
+- Added a separate startup error monitor that can display a visible banner even when the main webview script fails to parse.
+- Verified the generated webview in Chromium: ready handshake, New Chat, Settings, API-key action, Back navigation, Send, and loading a saved chat all work without browser runtime errors. An intentionally broken main script also triggers the visible startup error banner.
+
+## What is new in 0.2.0
+
+- **Targeted edits instead of whole-file replacement.** Existing files are changed only through exact `oldText` → `newText` anchors. Every anchor must match exactly once. Missing, duplicated, overlapping, overly broad, or stale patches are rejected.
+- **No implicit save of unsaved work.** The agent refuses to edit a dirty editor buffer. Save your own changes first.
+- **Approval before changes.** The extension shows only the changed sections, asks for approval, then applies all edits as one undoable VS Code WorkspaceEdit transaction.
+- **Staged edit progress.** After approval, the UI shows patch staging, application, saving, and disk verification so there is visible activity instead of a silent pause.
+- **Post-save verification.** The extension checks the editor and saved file against the approved patch before reporting success.
+- **Single-screen chat navigation.** Chat history is shown as a separate screen. Opening or creating a chat hides the list; the back arrow returns to chats. The NVIDIA API key controls are in Settings.
+- NVIDIA streaming chat and reasoning, workspace browsing, text search, active editor context, and approved terminal checks remain available.
 
 ## Requirements
 
 - VS Code 1.95 or newer.
 - Node.js 20 or newer for building the extension.
 - An NVIDIA API key with access to the configured NVIDIA NIM model.
-- An opened local workspace folder (the agent does not operate without a workspace).
+- An opened, trusted local workspace folder.
 
-## Run the extension in development
+## Run in development
 
-1. Extract this project and open the `nemotron-vscode-agent` folder in VS Code.
-2. Open a terminal in that folder and install dependencies:
+1. Extract this project and open its folder in VS Code.
+2. Install dependencies:
 
    ```bash
    npm install
    ```
 
-3. Compile the TypeScript:
+3. Compile:
 
    ```bash
    npm run compile
    ```
 
-4. Press `F5` in VS Code to launch an Extension Development Host.
-5. Open a project folder in the new VS Code window.
-6. Open **Nemotron Agent** from the Activity Bar.
-7. Click **Key** or run **Nemotron Agent: Set NVIDIA API Key**, then paste your NVIDIA API key.
-8. Ask the agent to inspect, explain, debug, or modify your project.
+4. Press `F5` to launch an Extension Development Host.
+5. Open a project folder, then open **Nemotron Agent** from the Activity Bar.
+6. Open Settings in the extension and set your NVIDIA API key. It is stored in VS Code Secret Storage.
 
 ## Package as a VSIX
 
-Install dependencies first, then run:
-
 ```bash
+npm install
 npm run compile
 npx vsce package
 ```
 
-This creates `nemotron-coding-agent-0.1.1.vsix`. In VS Code, use **Extensions: Install from VSIX...** to install it.
+Install the generated VSIX through **Extensions → Install from VSIX...**.
+
+## Safety behaviour for file edits
+
+The model cannot replace an existing file with a generated full-file string. For an existing file it must provide a list of exact, unique text anchors. The extension validates all anchors against one source snapshot before showing an approval preview. It rejects:
+
+- Anchors that do not exist or occur more than once.
+- Overlapping edit ranges.
+- Broad/whole-file replacements.
+- A file that has unsaved editor changes.
+- A file that changes while the approval dialog is open.
+- Edits outside the trusted workspace or edits to detected secret files.
+
+After approval, individual changes are staged in the UI. The actual file update is committed as **one atomic, undoable VS Code edit**, rather than writing partial file contents chunk by chunk. This is intentional: streaming incomplete source text directly to disk can leave a broken file if the extension or editor closes mid-write. The extension then saves and verifies the final file.
+
+New files can still be created with `createContent`, but only when the target path does not already exist and after explicit approval.
+
+## Other tool safety
+
+- Workspace reads and search are read-only.
+- Terminal commands require approval and run in the workspace root.
+- A limited set of file-writing, dependency-install, secret-dump, and destructive command patterns is blocked.
+- The extension does not expose arbitrary shell or direct delete-file tools.
+
+Review every approved patch and command. Commands can still have effects beyond the workspace depending on the shell and installed tools.
 
 ## Settings
 
@@ -59,28 +86,15 @@ This creates `nemotron-coding-agent-0.1.1.vsix`. In VS Code, use **Extensions: I
 | `nemotronAgent.baseUrl` | `https://integrate.api.nvidia.com/v1` | OpenAI-compatible API base URL |
 | `nemotronAgent.maxTokens` | `16384` | Maximum output tokens per model turn; reasoning tokens count toward this limit |
 | `nemotronAgent.reasoning` | `true` | Enable Nemotron thinking |
-| `nemotronAgent.maxToolRounds` | `8` | Maximum agent tool-call rounds per user request |
-
-## Safety model
-
-- Reading workspace files and searching workspace text are read-only.
-- File edits and terminal commands are disabled until the VS Code workspace is trusted.
-- `propose_file_edit` displays current/proposed content and pauses until you approve or reject.
-- `run_terminal_command` displays the command and pauses until you approve or reject. Approved commands execute with the workspace root as the working directory and a 120-second timeout.
-- A small set of file-writing, dependency-install, secret-dump, and destructive command patterns is blocked. Approval is still required for every terminal command.
-- The extension intentionally does not expose an arbitrary shell tool or a direct delete-file tool.
-
-Review every proposed change and command before approving it. Commands can still have effects beyond the workspace depending on the shell and installed tools. Stop cancels model requests and pending approvals, but an already-approved shell process may continue until it exits or reaches its timeout.
+| `nemotronAgent.maxToolRounds` | `8` | Maximum consecutive tool-call rounds per request |
 
 ## Current limitations
 
-This is a functional first version, not a one-to-one clone of Codex. It currently uses full-file replacement proposals rather than structured patch hunks, has no built-in Git diff/revert UI, and does not persist conversation history across VS Code restarts. It targets desktop VS Code; browser-based VS Code environments do not support its Node child-process command runner.
-
-## API details
-
-The extension calls NVIDIA's OpenAI-compatible Chat Completions endpoint directly from the VS Code extension host. The model ID, endpoint, recommended sampling values, streaming and reasoning fields are configured in `src/extension.ts`.
+This is not full Codex parity. Patch application is exact-anchor based rather than an interactive Git diff editor. It refuses to make edits when the target editor has unsaved changes. The workspace search is bounded and may skip large files. It targets desktop VS Code; browser-based VS Code environments may not support the Node child-process command runner.
 
 
-### Search implementation note
+## 0.2.1 stability update
 
-Workspace text search uses the stable `workspace.findFiles` and `workspace.fs.readFile` APIs, with per-file and total scan limits. It does not depend on proposed VS Code APIs.
+- Removed the runtime dependency on jsDelivr/remote Markdown scripts. The webview now renders basic Markdown locally, so its startup and button handlers do not depend on external network availability.
+- Added a visible in-panel error banner and extension-host error notifications for webview/runtime failures.
+- Registered the webview message listener before setting its HTML to avoid losing the initial ready handshake.

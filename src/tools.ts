@@ -15,6 +15,7 @@ import {
 } from './config';
 import * as child_process from 'node:child_process';
 import { promisify } from 'node:util';
+import { applyExactTextPatches, createPatchPreview, TextPatch } from './patchEngine';
 
 const execAsync = promisify(child_process.exec);
 
@@ -32,14 +33,25 @@ export type AskApproval = (payload: {
   oldPreview?: string;
   newPreview?: string;
   command?: string;
+  patchCount?: number;
 }) => Promise<boolean>;
+
+export interface EditProgress {
+  id: string;
+  path: string;
+  stage: 'preparing' | 'staging' | 'applying' | 'saving' | 'verifying' | 'completed' | 'failed';
+  current: number;
+  total: number;
+  message: string;
+}
 
 export class ToolRegistry {
   private readonly askApproval: AskApproval;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    askApproval: AskApproval
+    askApproval: AskApproval,
+    private readonly onEditProgress?: (progress: EditProgress) => void
   ) {
     this.askApproval = askApproval;
   }
@@ -106,15 +118,29 @@ export class ToolRegistry {
         function: {
           name: 'propose_file_edit',
           description:
-            'Propose creating or replacing a workspace text file. The user must approve the preview before the change is written. Always read an existing file first.',
+            'Propose a SAFE, targeted edit to an existing workspace file using exact unique text anchors. Never send the whole file. Read the latest file first. For each edit, oldText must match exactly once and newText contains only the replacement for that section. To create a new file only, use createContent.',
           parameters: {
             type: 'object',
             properties: {
-              path: { type: 'string' },
-              content: { type: 'string' },
-              summary: { type: 'string' },
+              path: { type: 'string', description: 'Workspace-relative path.' },
+              summary: { type: 'string', description: 'Short explanation of the change.' },
+              edits: {
+                type: 'array',
+                minItems: 1,
+                maxItems: 20,
+                description: 'Targeted exact replacements for an existing file. Do not replace the whole file.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    oldText: { type: 'string', description: 'Exact existing snippet including enough surrounding context to occur exactly once.' },
+                    newText: { type: 'string', description: 'Replacement snippet. Preserve all unchanged code inside the anchor.' },
+                  },
+                  required: ['oldText', 'newText'],
+                },
+              },
+              createContent: { type: 'string', description: 'Complete content for a brand-new file only. Never use this for an existing file.' },
             },
-            required: ['path', 'content', 'summary'],
+            required: ['path', 'summary'],
           },
         },
       },
@@ -261,64 +287,179 @@ export class ToolRegistry {
 
   async proposeFileEdit(
     relativePath: string,
-    content: string,
+    edits: TextPatch[] | undefined,
+    createContent: string | undefined,
     summary: string
   ): Promise<ToolResult> {
-    if (typeof content !== 'string') throw new Error('File content must be a string.');
     if (isSensitivePath(relativePath)) {
       throw new Error('Editing environment files, private keys, and secret files is blocked.');
     }
     const root = vscode.workspace.workspaceFolders?.[0]?.uri;
     if (!root) throw new Error('No workspace folder is open.');
+    if (!vscode.workspace.isTrusted) {
+      throw new Error('File editing is disabled in an untrusted workspace. Trust this workspace first.');
+    }
+
     const uri = safeUri(relativePath, root);
     await assertPathInsideWorkspace(uri, root);
-    if (content.length > MAX_FILE_EDIT_BYTES) {
-      throw new Error(
-        'Proposed file content is larger than 250 KB. Split the change into smaller files.'
-      );
-    }
-    let oldContent = '';
     let exists = false;
     try {
-      const current = await vscode.workspace.fs.readFile(uri);
-      if (current.byteLength > MAX_FILE_REPLACE_BYTES) {
-        throw new Error('Refusing to replace a file larger than 200 KB.');
-      }
-      if (current.includes(0)) {
-        throw new Error('Refusing to replace a binary file.');
-      }
-      oldContent = Buffer.from(current).toString('utf8');
+      const stat = await vscode.workspace.fs.stat(uri);
+      if (stat.type & vscode.FileType.Directory) throw new Error('The requested path is a directory, not a file.');
       exists = true;
     } catch (error: any) {
-      if (
-        error?.code !== 'FileNotFound' &&
-        error?.name !== 'FileNotFound' &&
-        !String(error?.message || '').includes('FileNotFound')
-      ) {
+      if (!isFileNotFound(error)) throw error;
+    }
+
+    if (!exists) {
+      if (typeof createContent !== 'string') {
+        throw new Error(`File ${relativePath} does not exist. Use createContent only to create a new file.`);
+      }
+      if (Array.isArray(edits) && edits.length) {
+        throw new Error('A new file must use createContent; targeted edits are only for existing files.');
+      }
+      if (createContent.length > MAX_FILE_EDIT_BYTES || createContent.includes('\0')) {
+        throw new Error('New file content is too large or contains binary data.');
+      }
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const approved = await this.askApproval({
+        id,
+        kind: 'file',
+        title: `Create ${relativePath}`,
+        summary: summary || 'New file proposed by Nemotron',
+        path: relativePath,
+        oldPreview: '(new file)',
+        newPreview: createContent.slice(0, 12_000),
+        patchCount: 1,
+      });
+      if (!approved) {
+        return { content: `User rejected the creation of ${relativePath}. Do not retry the same change.` };
+      }
+      try {
+        this.reportProgress({ id, path: relativePath, stage: 'preparing', current: 0, total: 1, message: 'Preparing new file…' });
+        await new Promise((resolve) => setTimeout(resolve, 45));
+        await assertPathInsideWorkspace(uri, root);
+        try {
+          await vscode.workspace.fs.stat(uri);
+          throw new Error(`The file ${relativePath} was created while approval was pending. Nothing was overwritten.`);
+        } catch (error: any) {
+          if (!isFileNotFound(error)) throw error;
+        }
+        this.reportProgress({ id, path: relativePath, stage: 'applying', current: 1, total: 1, message: 'Writing approved new file…' });
+        await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(uri.fsPath)));
+        await vscode.workspace.fs.writeFile(uri, Buffer.from(createContent, 'utf8'));
+        this.reportProgress({ id, path: relativePath, stage: 'verifying', current: 1, total: 1, message: 'Verifying saved file…' });
+        const saved = new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(uri));
+        if (saved !== createContent) throw new Error(`Verification failed for ${relativePath}. The file was written but does not match the approved content.`);
+        const document = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(document, { preview: false, preserveFocus: true });
+        this.reportProgress({ id, path: relativePath, stage: 'completed', current: 1, total: 1, message: 'New file saved and verified.' });
+        return { content: `Successfully created and verified ${relativePath}.` };
+      } catch (error) {
+        this.reportProgress({ id, path: relativePath, stage: 'failed', current: 0, total: 1, message: error instanceof Error ? error.message : String(error) });
         throw error;
       }
     }
+
+    if (typeof createContent === 'string') {
+      throw new Error('Full-file replacement is disabled. Existing files must be changed with targeted edits.');
+    }
+    if (!Array.isArray(edits)) {
+      throw new Error('Full-file content replacement is blocked. Use edits: [{ oldText, newText }] with exact unique snippets.');
+    }
+
+    const document = await vscode.workspace.openTextDocument(uri);
+    if (document.isDirty) {
+      throw new Error(` ${relativePath} has unsaved editor changes. Save it first; the agent will not overwrite or implicitly save your unsaved work.`.trim());
+    }
+    const originalText = document.getText();
+    const originalDiskBytes = Buffer.from(await vscode.workspace.fs.readFile(uri));
+    const originalVersion = document.version;
+    if (Buffer.byteLength(originalText, 'utf8') > MAX_FILE_REPLACE_BYTES) {
+      throw new Error('Refusing to edit a file larger than 200 KB.');
+    }
+    if (originalText.includes('\0')) throw new Error('Refusing to edit a binary file.');
+
+    const patchResult = applyExactTextPatches(originalText, edits);
+    if (Buffer.byteLength(patchResult.text, 'utf8') > MAX_FILE_EDIT_BYTES) {
+      throw new Error('The resulting file would exceed 250 KB. Split the change into smaller files.');
+    }
+    const preview = createPatchPreview(patchResult.patches);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const approved = await this.askApproval({
       id,
       kind: 'file',
-      title: exists ? `Edit ${relativePath}` : `Create ${relativePath}`,
-      summary: summary || 'File change proposed by Nemotron',
+      title: `Apply ${patchResult.patches.length} targeted edit${patchResult.patches.length === 1 ? '' : 's'} to ${relativePath}`,
+      summary: summary || 'Targeted patch proposed by Nemotron. Unmatched file content will remain untouched.',
       path: relativePath,
-      oldPreview: oldContent,
-      newPreview: content,
+      oldPreview: preview.oldPreview,
+      newPreview: preview.newPreview,
+      patchCount: patchResult.patches.length,
     });
     if (!approved) {
-      return {
-        content: `User rejected the proposed change to ${relativePath}. Do not retry the same change; explain or propose a different approach.`,
-      };
+      return { content: `User rejected the targeted patch for ${relativePath}. Do not retry the same change.` };
     }
-    await assertPathInsideWorkspace(uri, root);
-    await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(uri.fsPath)));
-    await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf8'));
-    const document = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(document, { preview: false, preserveFocus: true });
-    return { content: `Successfully ${exists ? 'updated' : 'created'} ${relativePath}.` };
+
+    const progress = (stage: EditProgress['stage'], current: number, message: string) =>
+      this.reportProgress({ id, path: relativePath, stage, current, total: patchResult.patches.length, message });
+
+    try {
+      progress('preparing', 0, 'Rechecking the file before applying the approved patch…');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await assertPathInsideWorkspace(uri, root);
+      if (document.isDirty) {
+        throw new Error('The file became dirty while approval was pending. Nothing was applied. Save or discard those changes and retry.');
+      }
+      if (document.version !== originalVersion || document.getText() !== originalText) {
+        throw new Error('The file changed while approval was pending. Nothing was applied. Read the latest file and propose a fresh patch.');
+      }
+      const currentDiskBytes = Buffer.from(await vscode.workspace.fs.readFile(uri));
+      if (!currentDiskBytes.equals(originalDiskBytes)) {
+        throw new Error('The file changed on disk while approval was pending. Nothing was applied. Read the latest file and propose a fresh patch.');
+      }
+
+      for (let index = 0; index < patchResult.patches.length; index++) {
+        progress('staging', index + 1, `Staging targeted change ${index + 1} of ${patchResult.patches.length}…`);
+        await new Promise((resolve) => setTimeout(resolve, 55));
+      }
+
+      // All replacements are resolved against the same immutable document version.
+      // VS Code applies this single WorkspaceEdit as one atomic undoable editor operation.
+      progress('applying', patchResult.patches.length, 'Applying the approved patch atomically…');
+      const workspaceEdit = new vscode.WorkspaceEdit();
+      for (const patch of patchResult.patches) {
+        const start = document.positionAt(patch.start);
+        const end = document.positionAt(patch.end);
+        workspaceEdit.replace(uri, new vscode.Range(start, end), patch.newText);
+      }
+      const applied = await vscode.workspace.applyEdit(workspaceEdit);
+      if (!applied) throw new Error('VS Code could not apply the approved patch. The file was not changed.');
+
+      progress('saving', patchResult.patches.length, 'Saving the updated file…');
+      const saved = await document.save();
+      if (!saved) {
+        throw new Error('The patch is applied in the editor but VS Code could not save it to disk. Review the editor and save manually.');
+      }
+
+      progress('verifying', patchResult.patches.length, 'Verifying the saved file against the approved result…');
+      const diskText = new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(uri));
+      if (diskText !== patchResult.text || document.getText() !== patchResult.text) {
+        throw new Error('Post-save verification did not match the approved patch. The editor contents were preserved; inspect the file before continuing.');
+      }
+
+      await vscode.window.showTextDocument(document, { preview: false, preserveFocus: true });
+      progress('completed', patchResult.patches.length, `Saved and verified ${patchResult.patches.length} targeted change${patchResult.patches.length === 1 ? '' : 's'}.`);
+      return {
+        content: `Successfully applied and verified ${patchResult.patches.length} targeted edit${patchResult.patches.length === 1 ? '' : 's'} in ${relativePath}. All text outside the approved exact-match sections was preserved.`,
+      };
+    } catch (error) {
+      progress('failed', 0, error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }
+
+  private reportProgress(progress: EditProgress): void {
+    this.onEditProgress?.(progress);
   }
 
   async runCommand(command: string, reason: string): Promise<ToolResult> {
@@ -365,6 +506,10 @@ export class ToolRegistry {
       };
     }
   }
+}
+
+function isFileNotFound(error: any): boolean {
+  return error?.code === 'FileNotFound' || error?.name === 'FileNotFound' || String(error?.message || '').includes('FileNotFound');
 }
 
 function errorStderr(stderr: string | Buffer | undefined): string {
