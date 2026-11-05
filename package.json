@@ -2,7 +2,7 @@
   "name": "nemotron-coding-agent",
   "displayName": "Nemotron Coding Agent",
   "description": "A workspace-aware coding agent powered by NVIDIA Nemotron. Review and approve file edits and terminal commands.",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "icon": "media/extension-icon.png",
   "publisher": "rjryt",
   "license": "SEE LICENSE IN LICENSE",
@@ -106,8 +106,36 @@
           "type": "integer",
           "default": 8,
           "minimum": 1,
-          "maximum": 20,
+          "maximum": 50,
           "description": "Maximum consecutive tool-calling rounds per user request."
+        },
+        "nemotronAgent.persona": {
+          "type": "string",
+          "default": "helpful coding assistant",
+          "description": "Persona that guides how Nemotron behaves."
+        },
+        "nemotronAgent.tone": {
+          "type": "string",
+          "default": "",
+          "description": "Preferred tone for responses (e.g. concise, detailed)."
+        },
+        "nemotronAgent.expertise": {
+          "type": "array",
+          "default": [],
+          "description": "Areas of expertise used for personalization.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "nemotronAgent.memoryEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Remember facts across chats in this workspace."
+        },
+        "nemotronAgent.autoSaveChats": {
+          "type": "boolean",
+          "default": true,
+          "description": "Save conversation history to this workspace so you can return to earlier chats."
         }
       }
     }

@@ -22,12 +22,26 @@ export const COMMAND_TIMEOUT_MS = 120_000;
 export const COMMAND_MAX_BUFFER = 1024 * 1024;
 export const APPROVAL_TIMEOUT_MS = 5 * 60_000;
 
+export const MAX_CHATS = 50;
+export const MAX_MEMORY_FACTS = 100;
+export const DEFAULT_PERSONA = 'helpful coding assistant';
+
 export interface NemotronAgentConfig {
   model: string;
   baseUrl: string;
   maxTokens: number;
   reasoning: boolean;
   maxToolRounds: number;
+  persona: string;
+  memoryEnabled: boolean;
+  autoSaveChats: boolean;
+}
+
+export interface PersonalizationConfig {
+  persona: string;
+  tone: string;
+  expertise: string[];
+  memoryEnabled: boolean;
 }
 
 export function getNemotronAgentConfig(): NemotronAgentConfig {
@@ -38,6 +52,9 @@ export function getNemotronAgentConfig(): NemotronAgentConfig {
     maxTokens: config.get<number>('maxTokens', MAX_TOKENS_DEFAULT),
     reasoning: config.get<boolean>('reasoning', REASONING_DEFAULT),
     maxToolRounds: config.get<number>('maxToolRounds', MAX_TOOL_ROUNDS_DEFAULT),
+    persona: config.get<string>('persona', DEFAULT_PERSONA),
+    memoryEnabled: config.get<boolean>('memoryEnabled', true),
+    autoSaveChats: config.get<boolean>('autoSaveChats', true),
   };
 }
 
@@ -73,4 +90,27 @@ export interface ApprovalPayload {
   oldPreview?: string;
   newPreview?: string;
   command?: string;
+}
+
+export interface ChatMemory {
+  facts: string[];
+  updatedAt: number;
+}
+
+export interface ChatSummary {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+  preview: string;
+}
+
+export interface ChatData {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ChatMessage[];
+  memory?: ChatMemory;
 }
