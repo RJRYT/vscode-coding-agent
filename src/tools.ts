@@ -22,6 +22,7 @@ const execAsync = promisify(child_process.exec);
 export interface ToolResult {
   content: string;
   isError?: boolean;
+  status?: 'success' | 'failed' | 'rejected' | 'timeout' | 'cancelled' | 'invalid' | 'unsupported' | 'stale';
 }
 
 export type AskApproval = (payload: {
@@ -49,14 +50,13 @@ export class ToolRegistry {
   private readonly askApproval: AskApproval;
 
   constructor(
-    private readonly context: vscode.ExtensionContext,
     askApproval: AskApproval,
     private readonly onEditProgress?: (progress: EditProgress) => void
   ) {
     this.askApproval = askApproval;
   }
 
-  toolDefinitions(): any[] {
+  toolDefinitions(): Array<{ type: string; function: { name: string; description: string; parameters: object } }> {
     return [
       {
         type: 'function',
@@ -194,7 +194,7 @@ export class ToolRegistry {
     return { content: `--- ${relativePath} ---\n${text}` };
   }
 
-  async getActiveEditorContext(): Promise<ToolResult> {
+  getActiveEditorContext(): ToolResult {
     const editor = vscode.window.activeTextEditor;
     if (!editor) return { content: 'No active text editor.' };
     if (!vscode.workspace.getWorkspaceFolder(editor.document.uri)) {
@@ -289,7 +289,8 @@ export class ToolRegistry {
     relativePath: string,
     edits: TextPatch[] | undefined,
     createContent: string | undefined,
-    summary: string
+    summary: string,
+    signal?: AbortSignal
   ): Promise<ToolResult> {
     if (isSensitivePath(relativePath)) {
       throw new Error('Editing environment files, private keys, and secret files is blocked.');
@@ -307,7 +308,7 @@ export class ToolRegistry {
       const stat = await vscode.workspace.fs.stat(uri);
       if (stat.type & vscode.FileType.Directory) throw new Error('The requested path is a directory, not a file.');
       exists = true;
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (!isFileNotFound(error)) throw error;
     }
 
@@ -322,7 +323,7 @@ export class ToolRegistry {
         throw new Error('New file content is too large or contains binary data.');
       }
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const approved = await this.askApproval({
+      const approved = await this.requestApproval({
         id,
         kind: 'file',
         title: `Create ${relativePath}`,
@@ -331,13 +332,15 @@ export class ToolRegistry {
         oldPreview: '(new file)',
         newPreview: createContent.slice(0, 12_000),
         patchCount: 1,
-      });
+      }, signal);
       if (!approved) {
-        return { content: `User rejected the creation of ${relativePath}. Do not retry the same change.` };
+        return { content: `User rejected the creation of ${relativePath}. Do not retry the same change.`, status: 'rejected' };
       }
+      if (signal?.aborted) throw new Error('Request cancelled before the approved file creation could be applied.');
       try {
         this.reportProgress({ id, path: relativePath, stage: 'preparing', current: 0, total: 1, message: 'Preparing new file…' });
         await new Promise((resolve) => setTimeout(resolve, 45));
+        if (signal?.aborted) throw new Error('Request cancelled before the new file could be written.');
         await assertPathInsideWorkspace(uri, root);
         try {
           await vscode.workspace.fs.stat(uri);
@@ -386,7 +389,7 @@ export class ToolRegistry {
     }
     const preview = createPatchPreview(patchResult.patches);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const approved = await this.askApproval({
+    const approved = await this.requestApproval({
       id,
       kind: 'file',
       title: `Apply ${patchResult.patches.length} targeted edit${patchResult.patches.length === 1 ? '' : 's'} to ${relativePath}`,
@@ -395,10 +398,11 @@ export class ToolRegistry {
       oldPreview: preview.oldPreview,
       newPreview: preview.newPreview,
       patchCount: patchResult.patches.length,
-    });
+    }, signal);
     if (!approved) {
-      return { content: `User rejected the targeted patch for ${relativePath}. Do not retry the same change.` };
+      return { content: `User rejected the targeted patch for ${relativePath}. Do not retry the same change.`, status: 'rejected' };
     }
+    if (signal?.aborted) throw new Error('Request cancelled before the approved patch could be applied.');
 
     const progress = (stage: EditProgress['stage'], current: number, message: string) =>
       this.reportProgress({ id, path: relativePath, stage, current, total: patchResult.patches.length, message });
@@ -406,6 +410,7 @@ export class ToolRegistry {
     try {
       progress('preparing', 0, 'Rechecking the file before applying the approved patch…');
       await new Promise((resolve) => setTimeout(resolve, 50));
+      if (signal?.aborted) throw new Error('Request cancelled before the approved patch could be applied.');
       await assertPathInsideWorkspace(uri, root);
       if (document.isDirty) {
         throw new Error('The file became dirty while approval was pending. Nothing was applied. Save or discard those changes and retry.');
@@ -458,11 +463,36 @@ export class ToolRegistry {
     }
   }
 
+  private requestApproval(
+    payload: Parameters<AskApproval>[0],
+    signal?: AbortSignal
+  ): Promise<boolean> {
+    if (!signal) return this.askApproval(payload);
+    if (signal.aborted) return Promise.reject(new Error('Request cancelled while waiting for approval.'));
+    return new Promise<boolean>((resolve, reject) => {
+      const onAbort = () => {
+        signal.removeEventListener('abort', onAbort);
+        reject(new Error('Request cancelled while waiting for approval.'));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      this.askApproval(payload).then(
+        (approved) => {
+          signal.removeEventListener('abort', onAbort);
+          resolve(approved);
+        },
+        (error) => {
+          signal.removeEventListener('abort', onAbort);
+          reject(error);
+        }
+      );
+    });
+  }
+
   private reportProgress(progress: EditProgress): void {
     this.onEditProgress?.(progress);
   }
 
-  async runCommand(command: string, reason: string): Promise<ToolResult> {
+  async runCommand(command: string, reason: string, signal?: AbortSignal): Promise<ToolResult> {
     if (typeof command !== 'string' || !command.trim()) throw new Error('Command is empty.');
     if (command.length > 1200) throw new Error('Command is too long.');
     validateCommand(command);
@@ -470,19 +500,21 @@ export class ToolRegistry {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri;
     if (!root) throw new Error('No workspace folder is open.');
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const approved = await this.askApproval({
+    const approved = await this.requestApproval({
       id,
       kind: 'command',
       title: 'Run terminal command',
       summary: reason || 'Command proposed by Nemotron',
       command,
-    });
+    }, signal);
     if (!approved) {
       return {
         content:
           'User rejected the terminal command. Do not retry it; continue without running it or explain the limitation.',
+        status: 'rejected',
       };
     }
+    if (signal?.aborted) throw new Error('Request cancelled before the approved terminal command could start.');
     const cwd = root.fsPath;
     const shell = process.platform === 'win32' ? undefined : '/bin/bash';
     try {
@@ -492,27 +524,40 @@ export class ToolRegistry {
         maxBuffer: COMMAND_MAX_BUFFER,
         windowsHide: true,
         shell,
+        signal,
       });
-      const output =
-        `${result.stdout || ''}${result.stderr ? `\n[stderr]\n${errorStderr(result.stderr)}` : ''}`.trim();
       return {
-        content: `Command completed successfully.\n${output.slice(0, 9000) || '(no output)'}`,
+        content: [
+          'Command execution result: SUCCESS',
+          `Command: ${command}`,
+          `Working directory: ${cwd}`,
+          'Exit code: 0',
+          `Standard output:\n${String(result.stdout || '(empty)').slice(0, 7000)}`,
+          `Standard error:\n${String(result.stderr || '(empty)').slice(0, 2000)}`,
+          'Timed out: no',
+        ].join('\n'),
+        status: 'success',
       };
     } catch (error: any) {
-      const output =
-        `${error?.stdout || ''}${error?.stderr ? `\n[stderr]\n${errorStderr(error.stderr)}` : ''}`.trim();
+      const timedOut = error?.killed === true || error?.signal === 'SIGTERM' || error?.code === 'ETIMEDOUT';
       return {
-        content: `Command failed (exit ${error?.code ?? 'unknown'}).\n${output.slice(0, 9000) || error?.message || 'No output.'}`,
+        content: [
+          'Command execution result: FAILURE',
+          `Command: ${command}`,
+          `Working directory: ${cwd}`,
+          `Exit code: ${typeof error?.code === 'number' ? error.code : 'unknown'}`,
+          `Standard output:\n${String(error?.stdout || '(empty)').slice(0, 7000)}`,
+          `Standard error:\n${String(error?.stderr || error?.message || '(empty)').slice(0, 2000)}`,
+          `Timed out: ${timedOut ? 'yes' : 'no'}`,
+        ].join('\n'),
+        isError: true,
+        status: signal?.aborted ? 'cancelled' : timedOut ? 'timeout' : 'failed',
       };
     }
   }
 }
 
-function isFileNotFound(error: any): boolean {
-  return error?.code === 'FileNotFound' || error?.name === 'FileNotFound' || String(error?.message || '').includes('FileNotFound');
-}
-
-function errorStderr(stderr: string | Buffer | undefined): string {
-  if (!stderr) return '';
-  return Buffer.isBuffer(stderr) ? stderr.toString('utf8') : String(stderr);
+function isFileNotFound(error: unknown): boolean {
+  const e = error as { code?: string; name?: string; message?: string } | undefined;
+  return e?.code === 'FileNotFound' || e?.name === 'FileNotFound' || String(e?.message || '').includes('FileNotFound');
 }

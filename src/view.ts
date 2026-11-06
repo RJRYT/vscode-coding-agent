@@ -1,19 +1,24 @@
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
-import {
-  API_KEY_SECRET,
-  getNemotronAgentConfig,
-} from './config';
+import { API_KEY_SECRET, getNemotronAgentConfig } from './config';
 import { AgentLoop } from './agent';
 import { ToolRegistry, AskApproval } from './tools';
 import { ChatStore } from './storage';
+import {
+  ContextOptions,
+  collectWorkspaceContext,
+  normalizeContextOptions,
+} from './context';
 
 export class NemotronAgentView implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private agent?: AgentLoop;
   private tools?: ToolRegistry;
   private store?: ChatStore;
-  private pending = new Map<string, { resolve: (approved: boolean) => void; timeout: NodeJS.Timeout }>;
+  private pending = new Map<
+    string,
+    { resolve: (approved: boolean) => void; timeout: NodeJS.Timeout }
+  >();
   private currentChatId: string | null = null;
 
   constructor(private readonly context: vscode.ExtensionContext) {
@@ -26,7 +31,9 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
 
     const askApproval: AskApproval = (payload) => this.askApproval(payload);
 
-    this.tools = new ToolRegistry(this.context, askApproval, (progress) => this.post({ type: 'editProgress', ...progress }));
+    this.tools = new ToolRegistry(askApproval, (progress) =>
+      this.post({ type: 'editProgress', ...progress })
+    );
     this.agent = new AgentLoop(this.context, this.tools, (message) => this.post(message));
 
     // Attach the message listener before setting HTML so the initial `ready`
@@ -77,10 +84,42 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
             maxTokens: config.maxTokens,
             maxToolRounds: config.maxToolRounds,
             tone: vscode.workspace.getConfiguration('nemotronAgent').get<string>('tone', ''),
-            expertise: vscode.workspace.getConfiguration('nemotronAgent').get<string[]>('expertise', []),
+            expertise: vscode.workspace
+              .getConfiguration('nemotronAgent')
+              .get<string[]>('expertise', []),
           },
           chats,
         });
+        break;
+      }
+      case 'previewContext': {
+        const options = normalizeContextOptions(message.contextOptions);
+        try {
+          const snapshot = await collectWorkspaceContext(options);
+          const details = [
+            ...(snapshot.activeEditor ? [snapshot.activeEditor.split('\\n')[0]] : []),
+            ...(snapshot.selectedCode
+              ? [snapshot.selectedCode.split('\\n')[0] + ' · selected range']
+              : []),
+            ...snapshot.included.filter((item) => item.startsWith('Problems')),
+            ...snapshot.unavailable,
+          ];
+          this.post({
+            type: 'contextPreview',
+            included: snapshot.included,
+            unavailable: snapshot.unavailable,
+            details,
+          });
+        } catch (error) {
+          this.post({
+            type: 'contextPreview',
+            included: [],
+            unavailable: [
+              `Context preview unavailable: ${error instanceof Error ? error.message : String(error)}`,
+            ],
+            details: [],
+          });
+        }
         break;
       }
       case 'send': {
@@ -94,11 +133,27 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
             });
             await vscode.commands.executeCommand('nemotronAgent.setApiKey');
             const configuredKey = await this.context.secrets.get(API_KEY_SECRET);
-            this.post({ type: 'keyState', hasKey: !!configuredKey, text: configuredKey ? 'NVIDIA API key is configured.' : 'NVIDIA API key is not configured.' });
+            this.post({
+              type: 'keyState',
+              hasKey: !!configuredKey,
+              text: configuredKey
+                ? 'NVIDIA API key is configured.'
+                : 'NVIDIA API key is not configured.',
+            });
             return;
           }
           const config = getNemotronAgentConfig();
-          await this.agent?.handleUserMessage(message.text, apiKey, config);
+          const contextOptions: ContextOptions = {
+            activeEditor: message.contextOptions?.activeEditor === true,
+            selectedCode: message.contextOptions?.selectedCode === true,
+            problems: message.contextOptions?.problems === true,
+          };
+          await this.agent?.handleUserMessage(
+            message.text,
+            apiKey,
+            config,
+            contextOptions
+          );
           this.currentChatId = this.agent?.currentChat ?? null;
           this.post({ type: 'chatsUpdated', chats: this.store ? this.store.listChats() : [] });
         }
@@ -164,18 +219,40 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         if (typeof tone === 'string') await cfg.update('tone', tone, true);
         if (Array.isArray(expertise)) await cfg.update('expertise', expertise, true);
         const config = getNemotronAgentConfig();
-        this.post({ type: 'configUpdated', config: { persona: config.persona, memoryEnabled: config.memoryEnabled, tone: vscode.workspace.getConfiguration('nemotronAgent').get<string>('tone', ''), expertise: vscode.workspace.getConfiguration('nemotronAgent').get<string[]>('expertise', []) } });
+        this.post({
+          type: 'configUpdated',
+          config: {
+            persona: config.persona,
+            memoryEnabled: config.memoryEnabled,
+            tone: vscode.workspace.getConfiguration('nemotronAgent').get<string>('tone', ''),
+            expertise: vscode.workspace
+              .getConfiguration('nemotronAgent')
+              .get<string[]>('expertise', []),
+          },
+        });
         break;
       }
       case 'saveSettings': {
         const cfg = vscode.workspace.getConfiguration('nemotronAgent');
         if (typeof message.model === 'string') await cfg.update('model', message.model, true);
         if (typeof message.baseUrl === 'string') await cfg.update('baseUrl', message.baseUrl, true);
-        if (typeof message.maxTokens === 'number') await cfg.update('maxTokens', message.maxTokens, true);
-        if (typeof message.maxToolRounds === 'number') await cfg.update('maxToolRounds', message.maxToolRounds, true);
-        if (typeof message.autoSaveChats === 'boolean') await cfg.update('autoSaveChats', message.autoSaveChats, true);
+        if (typeof message.maxTokens === 'number')
+          await cfg.update('maxTokens', message.maxTokens, true);
+        if (typeof message.maxToolRounds === 'number')
+          await cfg.update('maxToolRounds', message.maxToolRounds, true);
+        if (typeof message.autoSaveChats === 'boolean')
+          await cfg.update('autoSaveChats', message.autoSaveChats, true);
         const config = getNemotronAgentConfig();
-        this.post({ type: 'configUpdated', config: { model: config.model, baseUrl: config.baseUrl, maxTokens: config.maxTokens, maxToolRounds: config.maxToolRounds, autoSaveChats: config.autoSaveChats } });
+        this.post({
+          type: 'configUpdated',
+          config: {
+            model: config.model,
+            baseUrl: config.baseUrl,
+            maxTokens: config.maxTokens,
+            maxToolRounds: config.maxToolRounds,
+            autoSaveChats: config.autoSaveChats,
+          },
+        });
         break;
       }
       case 'renameChat': {
@@ -246,7 +323,7 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
 .list{flex:1;overflow:auto;padding:8px 4px;display:flex;flex-direction:column;gap:4px} .list h3{font-size:11px;color:var(--muted);margin:8px 10px 4px;text-transform:uppercase;letter-spacing:.6px} .chatItem{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;background:transparent} .chatItem:hover{background:var(--hover)} .chatItem.active{background:var(--active);color:var(--activeFg);border-color:var(--border)} .chatItem .meta{flex:1;overflow:hidden} .chatItem .title{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .chatItem .sub{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .chatItem .actions{opacity:0;display:flex;gap:4px} .chatItem:hover .actions,.chatItem.active .actions{opacity:1} .chatItem .actions button{padding:4px 6px;font-size:11px} .chatItem .renameInput{flex:1;min-width:0;background:var(--input);border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:4px 8px;font:inherit;font-size:12px} .chatItem .renameActions{display:flex;gap:4px} .chatItem .renameBtn{padding:4px 6px;font-size:11px} .empty{padding:16px;text-align:center;color:var(--muted);font-size:12px}
 
 /* Feed */
-.feed{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px;min-height:0} .welcome{margin:auto 0;text-align:center;color:var(--muted);padding:16px 6px} .welcome h2{font-size:16px;color:var(--fg);margin-bottom:6px} .welcome p{line-height:1.5} .suggestions{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px} .suggestions button{font-size:11px} .message{max-width:100%;line-height:1.55;overflow-wrap:anywhere} .message.user{background:var(--vscode-textBlockQuote-background);border:1px solid var(--border);padding:9px 10px;border-radius:9px;align-self:flex-end;max-width:94%;white-space:pre-wrap} .message.assistant{white-space:normal} .message.assistant .content{white-space:pre-wrap} .message .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px} .message pre{white-space:pre-wrap;overflow:auto;background:var(--vscode-textCodeBlock-background);padding:9px;border-radius:6px} .expandable .args{color:var(--muted);white-space:nowrap;font-size:10px;margin:4px 0;display:inline} .expandable summary{color:var(--muted);cursor:pointer;padding:5px 8px;font-size:11px;list-style:none;background:transparent;border-bottom:1px solid var(--border);user-select:none} .expandable summary:hover{background:var(--vscode-toolbar-hoverBackground)} .expandable[open] summary{border-bottom:1px solid transparent;border-radius:6px 6px 0 0;margin-bottom:-1px} .expandable[open] pre{white-space:pre-wrap;background:var(--vscode-textCodeBlock-background);padding:8px;margin:0;font-size:10px;overflow:auto;border-top:1px solid var(--border)} .expandable .result{color:var(--muted);white-space:pre-wrap;margin-top:4px;font-size:10px;max-height:240px;overflow:auto} .expandable .done{color:var(--vscode-descriptionForeground);margin-left:6px;font-size:10px} .approval{border:1px solid var(--warning);border-radius:8px;padding:10px;background:var(--card);display:flex;flex-direction:column;gap:8px} .approval h4{margin:0;font-size:13px} .approval .desc{color:var(--muted)} .preview{display:grid;grid-template-columns:1fr 1fr;gap:6px} .preview pre{margin:0;max-height:180px;font-size:10px;white-space:pre-wrap;overflow:auto;padding:7px;background:var(--vscode-textCodeBlock-background);border-radius:5px} .approval .actions{display:flex;gap:7px;justify-content:flex-end} .approval .danger{border-color:var(--error);color:var(--error)} .composer{border-top:1px solid var(--border);padding:9px;display:flex;flex-direction:column;gap:7px;flex-shrink:0} .textareaWrap{border:1px solid var(--vscode-input-border,var(--border));background:var(--input);border-radius:8px;padding:7px} .textareaWrap:focus-within{border-color:var(--vscode-focusBorder)} textarea{width:100%;resize:vertical;min-height:66px;max-height:180px;background:transparent;border:0;outline:0;color:var(--fg);font:inherit} .composerFoot{display:flex;align-items:center;justify-content:space-between} .status{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .actions{display:flex;gap:6px} .key{font-size:11px;color:var(--muted)} .send{min-width:62px} .hidden{display:none!important} a{color:var(--vscode-textLink-foreground)} .fatalError{margin:8px;padding:10px;border:1px solid var(--vscode-errorForeground);border-radius:7px;background:var(--vscode-inputValidation-errorBackground);color:var(--vscode-errorForeground);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.feed{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px;min-height:0} .welcome{margin:auto 0;text-align:center;color:var(--muted);padding:16px 6px} .welcome h2{font-size:16px;color:var(--fg);margin-bottom:6px} .welcome p{line-height:1.5} .suggestions{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px} .suggestions button{font-size:11px} .message{max-width:100%;line-height:1.55;overflow-wrap:anywhere} .message.user{background:var(--vscode-textBlockQuote-background);border:1px solid var(--border);padding:9px 10px;border-radius:9px;align-self:flex-end;max-width:94%;white-space:pre-wrap} .message.assistant{white-space:normal} .message.assistant .content{white-space:pre-wrap} .message .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px} .message pre{white-space:pre-wrap;overflow:auto;background:var(--vscode-textCodeBlock-background);padding:9px;border-radius:6px} .expandable .args{color:var(--muted);white-space:nowrap;font-size:10px;margin:4px 0;display:inline} .expandable summary{color:var(--muted);cursor:pointer;padding:5px 8px;font-size:11px;list-style:none;background:transparent;border-bottom:1px solid var(--border);user-select:none} .expandable summary:hover{background:var(--vscode-toolbar-hoverBackground)} .expandable[open] summary{border-bottom:1px solid transparent;border-radius:6px 6px 0 0;margin-bottom:-1px} .expandable[open] pre{white-space:pre-wrap;background:var(--vscode-textCodeBlock-background);padding:8px;margin:0;font-size:10px;overflow:auto;border-top:1px solid var(--border)} .expandable .result{color:var(--muted);white-space:pre-wrap;margin-top:4px;font-size:10px;max-height:240px;overflow:auto} .expandable .done{color:var(--vscode-descriptionForeground);margin-left:6px;font-size:10px} .approval{border:1px solid var(--warning);border-radius:8px;padding:10px;background:var(--card);display:flex;flex-direction:column;gap:8px} .approval h4{margin:0;font-size:13px} .approval .desc{color:var(--muted)} .preview{display:grid;grid-template-columns:1fr 1fr;gap:6px} .preview pre{margin:0;max-height:180px;font-size:10px;white-space:pre-wrap;overflow:auto;padding:7px;background:var(--vscode-textCodeBlock-background);border-radius:5px} .approval .actions{display:flex;gap:7px;justify-content:flex-end} .approval .danger{border-color:var(--error);color:var(--error)} .composer{border-top:1px solid var(--border);padding:9px;display:flex;flex-direction:column;gap:7px;flex-shrink:0} .textareaWrap{border:1px solid var(--vscode-input-border,var(--border));background:var(--input);border-radius:8px;padding:7px} .textareaWrap:focus-within{border-color:var(--vscode-focusBorder)} textarea{width:100%;resize:vertical;min-height:66px;max-height:180px;background:transparent;border:0;outline:0;color:var(--fg);font:inherit} .composerFoot{display:flex;align-items:center;justify-content:space-between} .status{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .actions{display:flex;gap:6px} .key{font-size:11px;color:var(--muted)} .send{min-width:62px} .contextRow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;position:relative} .contextMentionBtn{font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);background:var(--input);color:var(--fg);cursor:pointer} .contextMentionBtn:hover{background:var(--hover)} .contextPills{display:flex;flex-wrap:wrap;gap:6px;align-items:center} .contextPill{font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);background:var(--accent);color:var(--accentFg);display:inline-flex;align-items:center;gap:4px} .contextPill .remove{font-size:10px;cursor:pointer;padding:0 2px} .contextMenu{position:absolute;bottom:calc(100% + 4px);left:0;background:var(--card);border:1px solid var(--border);border-radius:6px;box-shadow:0 -4px 12px rgba(0,0,0,0.25);z-index:50;min-width:170px} .contextMenuItem{padding:6px 10px;font-size:11px;color:var(--fg);cursor:pointer} .contextMenuItem:hover{background:var(--hover)} .contextSummary{font-size:10px;color:var(--muted)} .hidden{display:none!important} a{color:var(--vscode-textLink-foreground)} .fatalError{margin:8px;padding:10px;border:1px solid var(--vscode-errorForeground);border-radius:7px;background:var(--vscode-inputValidation-errorBackground);color:var(--vscode-errorForeground);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 
 /* Memory & reasoning chips */
 .chip{font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);background:var(--input);color:var(--muted)} .chip.on{background:var(--accent);color:var(--accentFg);border-color:transparent}
@@ -305,6 +382,14 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
     <div class="feed" id="feed"><div class="welcome" id="welcome"><h2>What are we building?</h2><p>Ask me to understand your codebase, fix bugs, implement features, or run checks. I’ll ask before editing files or running commands.</p><div class="suggestions"><button data-prompt="Explore this codebase and explain its architecture.">Explore codebase</button><button data-prompt="Find likely bugs and suggest fixes. Do not change files yet.">Find bugs</button><button data-prompt="Review this project and identify the most important improvements.">Review project</button></div></div></div>
     <div class="composer">
       <div class="textareaWrap"><textarea id="prompt" placeholder="Ask Nemotron to work on your code… (Enter to send, Shift+Enter for newline)"></textarea></div>
+      <div class="contextRow" id="contextRow">
+        <div class="contextMenu hidden" id="contextMenu">
+          <div class="contextMenuItem" data-kind="activeEditor">@ActiveFile</div>
+          <div class="contextMenuItem" data-kind="selectedCode">@SelectedCode</div>
+          <div class="contextMenuItem" data-kind="problems">@Problems</div>
+        </div>
+        <div class="contextPills" id="contextPills"></div>
+      </div>
       <div class="composerFoot">
         <div class="status" id="status">Connect your NVIDIA API key to begin</div>
         <div class="actions" id="composerActions">
@@ -397,14 +482,24 @@ function renderMarkdown(source){
 function appendText(target,text){if(!target)return;currentRaw+=text;target.innerHTML=renderMarkdown(currentRaw);scroll()}
 function addReasoning(text){if(!currentAssistant)return;let box=currentAssistant.querySelector('.expandable.reasoning');if(!box){box=el('details','expandable reasoning');box.append(el('summary',null,'Reasoning / Thinking'),el('pre',null,''));currentAssistant.prepend(box);}box.querySelector('pre').textContent+=text;scroll()}
 function toolStart(name,args){const target=currentAssistant||feed;const box=el('details','expandable tool');box.dataset.tool=name;const summary=el('summary',null,'⚙ '+name);let detail='';if(name==='propose_file_edit'){const count=Array.isArray(args?.edits)?args.edits.length:(typeof args?.createContent==='string'?1:0);detail=String(args?.path||'')+' · '+count+' focused change'+(count===1?'':'s')}else if(name==='run_terminal_command'){detail=String(args?.command||'').slice(0,220)}else{detail=JSON.stringify(args||{}).slice(0,220)}summary.append(el('span','args',' '+detail));box.append(summary,el('pre','result',''));target.append(box);scroll()}
-function toolDone(name,result){const target=currentAssistant||feed;const boxes=[...target.querySelectorAll('.expandable.tool')].reverse();const box=boxes.find(b=>b.dataset.tool===name&&!b.querySelector('.result.done'));if(box){const r=box.querySelector('.result');r.textContent=result;r.classList.add('done');const d=el('span','done',' · done');box.querySelector('summary').append(d)}scroll()}
+function toolDone(name,result,status){const target=currentAssistant||feed;const boxes=[...target.querySelectorAll('.expandable.tool')].reverse();const box=boxes.find(b=>b.dataset.tool===name&&!b.querySelector('.result.done'));if(box){const r=box.querySelector('.result');r.textContent=result;r.classList.add('done');const label=status==='success'?'success':status==='rejected'?'rejected':status==='cancelled'?'cancelled':status==='timeout'?'timed out':status==='invalid'?'invalid':status==='unsupported'?'unsupported':status==='stale'?'stale':'failed';const d=el('span','done',' · '+label);box.querySelector('summary').append(d)}scroll()}
 function approvalCard(m){const card=el('div','approval');card.dataset.approval=m.id;card.append(el('h4',null,m.title));card.append(el('div','desc',m.summary||''));if(m.kind==='file'){card.append(el('div','desc path',m.path||''));if(m.patchCount)card.append(el('div','desc',m.patchCount+' targeted change'+(m.patchCount===1?'':'s')+' · all other file content stays untouched'));const grid=el('div','preview');const left=el('div','previewCol');left.append(el('div','previewLabel','REMOVE / REPLACE'));left.append(el('pre',null,m.oldPreview||'(new file)'));const right=el('div','previewCol');right.append(el('div','previewLabel','ADD / REPLACE WITH'));right.append(el('pre',null,m.newPreview||''));grid.append(left,right);card.append(grid)}else{card.append(el('pre',null,m.command||''))}const actions=el('div','actions');const reject=el('button','danger','Reject');const approve=el('button','primary','Approve patch');reject.onclick=()=>vscode.postMessage({type:'reject',id:m.id});approve.onclick=()=>{approve.disabled=true;reject.disabled=true;approve.textContent='Approved';vscode.postMessage({type:'approve',id:m.id})};actions.append(reject,approve);card.append(actions);feed.append(card);approvals.set(m.id,card);scroll()}
 function updateEditProgress(m){let card=editProgressCards.get(m.id);if(!card){card=el('div','edit-progress');card.dataset.progress=m.id;const line=el('div','line');line.append(el('span','spinner',''),el('span','progressText','Preparing edit…'));const track=el('div','progressTrack');track.append(el('span'));card.append(line,track);const approval=approvals.get(m.id);if(approval&&approval.parentNode===feed)approval.after(card);else feed.append(card);editProgressCards.set(m.id,card)}const text=card.querySelector('.progressText');if(text)text.textContent=m.message||'Working…';const bar=card.querySelector('.progressTrack span');if(bar){const pct=m.stage==='completed'?100:m.total?Math.max(4,Math.round((m.current/m.total)*82)):4;bar.style.width=pct+'%'}if(m.stage==='completed'){card.classList.add('done');card.querySelector('.spinner').textContent='✓';setStatus(m.message||'File saved and verified',false)}else if(m.stage==='failed'){card.classList.add('done');card.querySelector('.spinner').textContent='!';setStatus('Edit needs attention',false)}else{setStatus(m.message||'Applying approved changes…',true)}scroll()}
 function setBusy(v){busy=v;sendBtn.disabled=v;stopBtn.classList.toggle('hidden',!v);if(v)setStatus('Nemotron is working…',true);else if(statusEl.classList.contains('working'))setStatus('Ready',false)}
 let renamingChatId=null;function renderChats(){chatListEl.innerHTML='';const query=(document.getElementById('chatSearch').value||'').trim().toLowerCase();const shown=chats.filter(c=>!query||String(c.title||'').toLowerCase().includes(query)||String(c.preview||'').toLowerCase().includes(query));if(!shown.length){chatListEl.append(el('div','empty',query?'No chats match your search.':'No saved chats yet. Start a new chat to begin.'));return}shown.forEach(c=>{const item=el('div','chatItem');if(c.id===currentChatId)item.classList.add('active');const meta=el('div','meta');const titleDiv=el('div','title',c.title);titleDiv.id='chatTitle-'+c.id;meta.append(titleDiv);meta.append(el('div','sub',new Date(c.updatedAt).toLocaleString()+' · '+c.messageCount+' messages'));item.append(meta);const actions=el('div','actions');const renameBtn=el('button','renameBtn','✎');renameBtn.title='Rename chat';renameBtn.setAttribute('aria-label','Rename chat');renameBtn.onclick=(e)=>{e.stopPropagation();startRename(c)};actions.append(renameBtn);const del=el('button','','🗑');del.title='Delete chat';del.setAttribute('aria-label','Delete chat');del.onclick=(e)=>{e.stopPropagation();if(confirm('Delete this chat?'))vscode.postMessage({type:'deleteChat',id:c.id})};actions.append(del);item.append(actions);item.onclick=()=>{if(renamingChatId===c.id)return;currentChatId=c.id;vscode.postMessage({type:'loadChat',id:c.id})};chatListEl.append(item)})}function startRename(c){if(renamingChatId)doCancel();const titleDiv=document.getElementById('chatTitle-'+c.id);if(!titleDiv)return;renamingChatId=c.id;const input=el('input','renameInput');input.value=c.title;const save=el('button','renameBtn primary','Save');const cancel=el('button','renameBtn','Cancel');const doCancel=()=>{renamingChatId=null;renderChats()};save.onclick=(e)=>{e.stopPropagation();const newTitle=input.value.trim();if(newTitle&&newTitle!==c.title){vscode.postMessage({type:'renameChat',id:c.id,title:newTitle})}doCancel()};cancel.onclick=(e)=>{e.stopPropagation();doCancel()};const bar=el('div','renameActions');bar.append(input,save,cancel);titleDiv.textContent='';titleDiv.append(bar);input.focus()}
 function startNewChat(){currentChatId=null;showView('chat');vscode.postMessage({type:'newChat'});renderChats()}
-function send(){const text=input.value.trim();if(!text||busy)return;if(currentScreen!=='chat')showView('chat');addUser(text);input.value='';startAssistant();setBusy(true);vscode.postMessage({type:'send',text})}
-sendBtn.onclick=send;stopBtn.onclick=()=>vscode.postMessage({type:'stop'});document.getElementById('newBtn').onclick=startNewChat;document.getElementById('listNewBtn').onclick=startNewChat;document.getElementById('settingsBtn').onclick=()=>showView('settings');backToList.onclick=()=>showView('list');document.getElementById('keyBtn').onclick=()=>vscode.postMessage({type:'setKey'});document.getElementById('clearKeyBtn').onclick=()=>{if(confirm('Remove the saved NVIDIA API key?'))vscode.postMessage({type:'clearKey'})};document.getElementById('chatSearch').addEventListener('input',renderChats);input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});document.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>{input.value=b.dataset.prompt;input.focus()});
+const CONTEXT_KINDS=['activeEditor','selectedCode','problems'];
+const KIND_LABEL={'activeEditor':'@ActiveFile','selectedCode':'@SelectedCode','problems':'@Problems'};
+const selectedContexts=new Set();
+function contextOptions(){return {activeEditor:selectedContexts.has('activeEditor'),selectedCode:selectedContexts.has('selectedCode'),problems:selectedContexts.has('problems')}}
+function renderContextPills(){const pills=document.getElementById('contextPills');pills.innerHTML='';CONTEXT_KINDS.forEach(kind=>{if(selectedContexts.has(kind)){const pill=el('div','contextPill');pill.append(el('span',null,KIND_LABEL[kind]));const rm=el('span','remove','×');rm.onclick=(e)=>{e.stopPropagation();selectedContexts.delete(kind);renderContextPills();updateContextUi()};pill.append(rm);pills.append(pill)}})}
+function insertMentionTag(kind){const tag='@'+kind.replace(/([A-Z])/g,' $1').trim().replace(/\s+/g,' ').replace(/\s/g,'')+' ';const s=input.selectionStart??0;const e=input.selectionEnd??0;const v=input.value;input.value=v.slice(0,s)+tag+v.slice(e);input.selectionStart=input.selectionEnd=s+tag.length;input.focus();updateContextUi()}
+function updateContextUi(){const opts=contextOptions();const enabled=CONTEXT_KINDS.filter(k=>selectedContexts.has(k)).map(k=>KIND_LABEL[k]);vscode.postMessage({type:'previewContext',contextOptions:opts})}
+const contextMenu=document.getElementById('contextMenu');function showContextMenu(){const sel=input.selectionStart??0;const rect=input.getBoundingClientRect();contextMenu.style.left=rect.left+sel*7+'px';contextMenu.classList.remove('hidden')}
+function hideContextMenu(){contextMenu.classList.add('hidden')}
+contextMenu.querySelectorAll('.contextMenuItem').forEach(item=>{item.onclick=(e)=>{e.stopPropagation();const kind=item.getAttribute('data-kind');if(kind){if(selectedContexts.has(kind))selectedContexts.delete(kind);else selectedContexts.add(kind)}renderContextPills();updateContextUi();insertMentionTag(kind);hideContextMenu()}});document.addEventListener('click',(e)=>{if(!contextMenu.contains(e.target)&&e.target!==input)hideContextMenu()});
+function send(){const text=input.value.trim();if(!text||busy)return;if(currentScreen!=='chat')showView('chat');addUser(text);input.value='';startAssistant();setBusy(true);vscode.postMessage({type:'send',text,contextOptions:contextOptions()})}
+sendBtn.onclick=send;stopBtn.onclick=()=>vscode.postMessage({type:'stop'});document.getElementById('newBtn').onclick=startNewChat;document.getElementById('listNewBtn').onclick=startNewChat;document.getElementById('settingsBtn').onclick=()=>showView('settings');backToList.onclick=()=>showView('list');document.getElementById('keyBtn').onclick=()=>vscode.postMessage({type:'setKey'});document.getElementById('clearKeyBtn').onclick=()=>{if(confirm('Remove the saved NVIDIA API key?'))vscode.postMessage({type:'clearKey'})};document.getElementById('chatSearch').addEventListener('input',renderChats);input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}if(e.key==='@'||(e.shiftKey&&e.key==='2')){e.preventDefault();showContextMenu()}});input.addEventListener('input',()=>{const val=input.value;if(!val.endsWith('@')&&!val.includes(' @'))hideContextMenu()});document.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>{input.value=b.dataset.prompt;input.focus()});
 const thinkBtn=document.getElementById('thinkBtn');thinkBtn.onclick=()=>{const on=!thinkBtn.classList.contains('on');thinkBtn.classList.toggle('on',on);vscode.postMessage({type:'toggleReasoning',enabled:on})};
 document.getElementById('settingReasoning').onchange=e=>vscode.postMessage({type:'toggleReasoning',enabled:e.target.checked});
 document.getElementById('settingMemory').onchange=e=>vscode.postMessage({type:'toggleMemory',enabled:e.target.checked});
@@ -413,8 +508,8 @@ const sModel=document.getElementById('settingModel');const sBase=document.getEle
 function applyConfig(c){if(!c)return;config={...config,...c};sReasoning.checked=!!c.reasoning;sMemory.checked=!!c.memoryEnabled;thinkBtn.classList.toggle('on',!!c.reasoning);if(c.persona!==undefined)sPersona.value=c.persona;if(c.tone!==undefined)sTone.value=c.tone;if(c.expertise!==undefined)sExpertise.value=c.expertise.join(', ');if(c.model!==undefined)sModel.value=c.model;if(c.baseUrl!==undefined)sBase.value=c.baseUrl;if(c.maxTokens!==undefined)sMax.value=c.maxTokens;if(c.maxToolRounds!==undefined)sRounds.value=c.maxToolRounds;sAuto.checked=!!c.autoSaveChats}
 function saveTextSettings(){vscode.postMessage({type:'saveSettings',model:sModel.value,baseUrl:sBase.value,maxTokens:Number(sMax.value)||0,maxToolRounds:Number(sRounds.value)||0,autoSaveChats:sAuto.checked});vscode.postMessage({type:'setPerson',persona:sPersona.value,tone:sTone.value,expertise:sExpertise.value.split(',').map(s=>s.trim()).filter(Boolean)})}
 [sModel,sBase,sMax,sRounds,sPersona,sTone,sExpertise].forEach(node=>node.addEventListener('change',saveTextSettings));
-window.addEventListener('message',event=>{const m=event.data;switch(m.type){case'ready':applyConfig(m.config);chats=m.chats||[];currentChatId=null;renderChats();keyStatus.textContent=m.hasKey?'NVIDIA API key is configured.':'NVIDIA API key is not configured.';setStatus(m.hasKey?'Ready · NVIDIA API key configured':'Add your NVIDIA API key in Settings',false);showView('list');break;case'status':setStatus(m.text,busy);break;case'userMessage':break;case'assistantStart':break;case'delta':appendText(currentAssistant,m.text);setStatus('Generating response…',true);break;case'reasoningDelta':addReasoning(m.text);setStatus('Thinking…',true);break;case'reasoning':addReasoning(m.text);break;case'toolStart':toolStart(m.name,m.args);setStatus('Using '+m.name+'…',true);break;case'toolDone':toolDone(m.name,m.result);break;case'approval':approvalCard(m);setStatus('Waiting for your approval…',false);break;case'approvalResolved':{const c=approvals.get(m.id);if(c){c.querySelector('.actions').textContent=m.approved?'Approved · preparing patch':'Rejected';c.style.opacity='.8'}break}case'approvalExpired':{const c=approvals.get(m.id);if(c){c.querySelector('.actions').textContent='Approval expired';c.style.opacity='.65'}setStatus('Approval expired',false);break}case'editProgress':updateEditProgress(m);break;case'keyState':keyStatus.textContent=m.text;setStatus(m.text,false);break;case'assistantDone':currentAssistant=null;currentRaw='';setStatus('Ready',false);setBusy(false);break;case'error':{appendText(currentAssistant,'\n\nError: '+m.text);currentAssistant=null;setStatus('Request failed',false);setBusy(false);break}case'busy':setBusy(m.value);break;case'chatCreated':currentChatId=m.id;showView('chat');renderChats();break;case'chatsUpdated':chats=m.chats||[];renderChats();break;case'chatLoaded':currentChatId=m.id;showView('chat');renderChats();document.getElementById('welcome')?.remove();feed.innerHTML='';(m.messages||[]).forEach(msg=>{if(msg.role==='user'){addUser(msg.content||'')}else if(msg.role==='assistant'){startAssistant();if(msg.content)appendText(currentAssistant,msg.content)}});setStatus('Ready',false);break;case'configUpdated':applyConfig(m.config);break;case'reset':showView('chat');feed.innerHTML='';const w=el('div','welcome');w.id='welcome';w.innerHTML='<h2>New conversation</h2><p>Ask me to understand your codebase, fix bugs, or implement a feature.</p>';feed.append(w);currentAssistant=null;currentRaw='';setStatus('New chat',false);break}});
-showView('list');vscode.postMessage({type:'ready'});
+window.addEventListener('message',event=>{const m=event.data;switch(m.type){case'contextPreview':{break}case'ready':applyConfig(m.config);chats=m.chats||[];currentChatId=null;renderChats();keyStatus.textContent=m.hasKey?'NVIDIA API key is configured.':'NVIDIA API key is not configured.';setStatus(m.hasKey?'Ready · NVIDIA API key configured':'Add your NVIDIA API key in Settings',false);showView('list');break;case'status':setStatus(m.text,busy);break;case'userMessage':break;case'assistantStart':break;case'delta':appendText(currentAssistant,m.text);setStatus('Generating response…',true);break;case'reasoningDelta':addReasoning(m.text);setStatus('Thinking…',true);break;case'reasoning':addReasoning(m.text);break;case'toolStart':toolStart(m.name,m.args);setStatus('Using '+m.name+'…',true);break;case'toolDone':toolDone(m.name,m.result,m.status);break;case'approval':approvalCard(m);setStatus('Waiting for your approval…',false);break;case'approvalResolved':{const c=approvals.get(m.id);if(c){c.querySelector('.actions').textContent=m.approved?'Approved · preparing patch':'Rejected';c.style.opacity='.8'}break}case'approvalExpired':{const c=approvals.get(m.id);if(c){c.querySelector('.actions').textContent='Approval expired';c.style.opacity='.65'}setStatus('Approval expired',false);break}case'editProgress':updateEditProgress(m);break;case'keyState':keyStatus.textContent=m.text;setStatus(m.text,false);break;case'assistantDone':currentAssistant=null;currentRaw='';setStatus('Ready',false);setBusy(false);break;case'error':{appendText(currentAssistant,'\n\nError: '+m.text);currentAssistant=null;setStatus('Request failed',false);setBusy(false);break}case'busy':setBusy(m.value);break;case'chatCreated':currentChatId=m.id;showView('chat');renderChats();break;case'chatsUpdated':chats=m.chats||[];renderChats();break;case'chatLoaded':currentChatId=m.id;showView('chat');renderChats();document.getElementById('welcome')?.remove();feed.innerHTML='';(m.messages||[]).forEach(msg=>{if(msg.role==='user'){addUser(msg.content||'')}else if(msg.role==='assistant'){startAssistant();if(msg.content)appendText(currentAssistant,msg.content)}});setStatus('Ready',false);break;case'configUpdated':applyConfig(m.config);break;case'reset':showView('chat');feed.innerHTML='';const w=el('div','welcome');w.id='welcome';w.innerHTML='<h2>New conversation</h2><p>Ask me to understand your codebase, fix bugs, or implement a feature.</p>';feed.append(w);currentAssistant=null;currentRaw='';setStatus('New chat',false);break}});
+updateContextUi();showView('list');vscode.postMessage({type:'ready'});
 </script></body></html>`;
   }
 }
