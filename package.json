@@ -2,7 +2,7 @@
   "name": "nemotron-coding-agent",
   "displayName": "Nemotron Coding Agent",
   "description": "A workspace-aware coding agent powered by NVIDIA Nemotron. Review and approve file edits and terminal commands.",
-  "version": "0.2.14",
+  "version": "0.2.15",
   "icon": "media/extension-icon.png",
   "publisher": "rjryt",
   "license": "SEE LICENSE IN LICENSE",
@@ -130,13 +130,23 @@
         "nemotronAgent.responseLanguage": {
           "type": "string",
           "default": "auto",
-          "enum": ["auto", "English", "Malayalam", "Hindi"],
+          "enum": [
+            "auto",
+            "English",
+            "Malayalam",
+            "Hindi"
+          ],
           "description": "Preferred language for explanations and conversation."
         },
         "nemotronAgent.codeStyle": {
           "type": "string",
           "default": "follow project conventions",
-          "enum": ["follow project conventions", "minimal focused changes", "TypeScript-first", "JavaScript-first"],
+          "enum": [
+            "follow project conventions",
+            "minimal focused changes",
+            "TypeScript-first",
+            "JavaScript-first"
+          ],
           "description": "Preferred coding style when it does not conflict with the existing project."
         },
         "nemotronAgent.memoryEnabled": {
@@ -153,7 +163,7 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && node scripts/copy-resources.cjs",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext .ts",
     "test": "vitest run",

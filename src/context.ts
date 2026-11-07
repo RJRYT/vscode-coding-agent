@@ -5,6 +5,36 @@ export interface ContextOptions {
   activeEditor: boolean;
   selectedCode: boolean;
   problems: boolean;
+  [sourceId: string]: boolean;
+}
+
+export interface ContextSource {
+  id: string;
+  label: string;
+  maxChars?: number;
+  collect: () => Promise<string | undefined> | string | undefined;
+}
+
+/** Extension point for future context providers (for example git history or dependencies). */
+export class ContextSourceRegistry {
+  private readonly sources = new Map<string, ContextSource>();
+
+  register(source: ContextSource): vscode.Disposable {
+    if (!/^[a-z][a-zA-Z0-9_-]{1,63}$/.test(source.id) || ['activeEditor', 'selectedCode', 'problems'].includes(source.id)) {
+      throw new Error(`Invalid or reserved context source id: ${source.id}`);
+    }
+    if (this.sources.has(source.id)) throw new Error(`Context source already registered: ${source.id}`);
+    this.sources.set(source.id, source);
+    return new vscode.Disposable(() => this.sources.delete(source.id));
+  }
+
+  all(): ContextSource[] { return [...this.sources.values()]; }
+}
+
+export const contextSources = new ContextSourceRegistry();
+
+export function registerContextSource(source: ContextSource): vscode.Disposable {
+  return contextSources.register(source);
 }
 
 export interface WorkspaceContext {
@@ -14,6 +44,7 @@ export interface WorkspaceContext {
   capturedAt: string;
   included: string[];
   unavailable: string[];
+  extensions?: Record<string, string>;
 }
 
 const EDITOR_LIMIT = 45_000;
@@ -23,7 +54,9 @@ const TOTAL_LIMIT = 70_000;
 
 function truncate(value: string, limit: number): { value: string; truncated: boolean } {
   if (value.length <= limit) return { value, truncated: false };
-  return { value: value.slice(0, limit) + `\n[Truncated: ${value.length - limit} characters omitted]`, truncated: true };
+  const marker = '\n[Truncated]';
+  if (limit <= marker.length) return { value: '', truncated: true };
+  return { value: value.slice(0, limit - marker.length) + marker, truncated: true };
 }
 
 async function relativePath(uri: vscode.Uri): Promise<string | undefined> {
@@ -40,12 +73,14 @@ async function relativePath(uri: vscode.Uri): Promise<string | undefined> {
 }
 
 export function normalizeContextOptions(value: unknown): ContextOptions {
-  const input = (value && typeof value === 'object' ? value : {}) as Partial<ContextOptions>;
-  return {
+  const input = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as Partial<ContextOptions>;
+  const normalized: ContextOptions = {
     activeEditor: input.activeEditor === true,
     selectedCode: input.selectedCode === true,
     problems: input.problems === true,
   };
+  for (const source of contextSources.all()) normalized[source.id] = input[source.id] === true;
+  return normalized;
 }
 
 export async function collectWorkspaceContext(
@@ -127,6 +162,23 @@ export async function collectWorkspaceContext(
     }
   }
 
+  const extensions: Record<string, string> = {};
+  for (const source of contextSources.all()) {
+    if (!options[source.id]) continue;
+    try {
+      const value = await source.collect();
+      if (typeof value !== 'string' || !value.trim()) result.unavailable.push(`${source.label}: no context available`);
+      else {
+        const bounded = truncate(value, Math.min(source.maxChars ?? 12_000, 20_000));
+        extensions[source.id] = bounded.value;
+        result.included.push(source.label);
+      }
+    } catch (error: unknown) {
+      result.unavailable.push(`${source.label}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (Object.keys(extensions).length) result.extensions = extensions;
+
   // Bound combined context while retaining the user's independently selected sources.
   let remaining = TOTAL_LIMIT;
   for (const key of ['selectedCode', 'activeEditor', 'problems'] as const) {
@@ -134,6 +186,11 @@ export async function collectWorkspaceContext(
     if (!value) continue;
     const bounded = truncate(value, Math.max(0, remaining));
     result[key] = bounded.value;
+    remaining = Math.max(0, remaining - bounded.value.length);
+  }
+  for (const [key, value] of Object.entries(result.extensions ?? {})) {
+    const bounded = truncate(value, Math.max(0, remaining));
+    result.extensions![key] = bounded.value;
     remaining = Math.max(0, remaining - bounded.value.length);
   }
   return result;
@@ -144,6 +201,7 @@ export function formatWorkspaceContext(context: WorkspaceContext): string {
     ['ACTIVE EDITOR SNAPSHOT', context.activeEditor],
     ['SELECTED CODE SNAPSHOT', context.selectedCode],
     ['WORKSPACE PROBLEMS SNAPSHOT', context.problems],
+    ...Object.entries(context.extensions ?? {}).map(([key, value]) => [`EXTENSION CONTEXT: ${key}`, value] as [string, string]),
   ];
   const availableSections = sections.filter(
     (entry): entry is [string, string] => typeof entry[1] === 'string' && !!entry[1]

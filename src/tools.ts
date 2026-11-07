@@ -16,6 +16,7 @@ import {
 import * as child_process from 'node:child_process';
 import { promisify } from 'node:util';
 import { applyExactTextPatches, createPatchPreview, TextPatch } from './patchEngine';
+import type { AgentLogger } from './logger';
 
 const execAsync = promisify(child_process.exec);
 
@@ -52,7 +53,8 @@ export class ToolRegistry {
 
   constructor(
     askApproval: AskApproval,
-    private readonly onEditProgress?: (progress: EditProgress) => void
+    private readonly onEditProgress?: (progress: EditProgress) => void,
+    private readonly logger?: AgentLogger
   ) {
     this.askApproval = askApproval;
   }
@@ -263,8 +265,8 @@ export class ToolRegistry {
             results.push(`${relativePath}:${index + 1}: ${line.trim().slice(0, 260)}`);
           }
         }
-      } catch {
-        // Ignore unreadable, deleted, or otherwise inaccessible files and continue the search.
+      } catch (error: unknown) {
+        this.logger?.write({ level: 'warn', event: 'workspace.search_file_skipped', details: { path: relativePath, reason: error instanceof Error ? error.message : String(error) } });
       }
     }
 
@@ -340,6 +342,7 @@ export class ToolRegistry {
         return { content: `User rejected the creation of ${relativePath}. Do not retry the same change.`, status: 'rejected' };
       }
       if (signal?.aborted) throw new Error('Request cancelled before the approved file creation could be applied.');
+      let createdByAgent = false;
       try {
         this.reportProgress({ id, path: relativePath, stage: 'preparing', current: 0, total: 1, message: 'Preparing new file…' });
         await new Promise((resolve) => setTimeout(resolve, 45));
@@ -348,20 +351,30 @@ export class ToolRegistry {
         try {
           await vscode.workspace.fs.stat(uri);
           throw new Error(`The file ${relativePath} was created while approval was pending. Nothing was overwritten.`);
-        } catch (error: any) {
+        } catch (error: unknown) {
           if (!isFileNotFound(error)) throw error;
         }
         this.reportProgress({ id, path: relativePath, stage: 'applying', current: 1, total: 1, message: 'Writing approved new file…' });
         await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(uri.fsPath)));
         await vscode.workspace.fs.writeFile(uri, Buffer.from(createContent, 'utf8'));
+        createdByAgent = true;
         this.reportProgress({ id, path: relativePath, stage: 'verifying', current: 1, total: 1, message: 'Verifying saved file…' });
         const saved = new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(uri));
         if (saved !== createContent) throw new Error(`Verification failed for ${relativePath}. The file was written but does not match the approved content.`);
         const document = await vscode.workspace.openTextDocument(uri);
-        await vscode.window.showTextDocument(document, { preview: false, preserveFocus: true });
+        try { await vscode.window.showTextDocument(document, { preview: false, preserveFocus: true }); }
+        catch (error: unknown) { this.logger?.write({ level: 'warn', event: 'workspace.open_created_file_failed', details: { path: relativePath, reason: error instanceof Error ? error.message : String(error) } }); }
         this.reportProgress({ id, path: relativePath, stage: 'completed', current: 1, total: 1, message: 'New file saved and verified.' });
         return { content: `Successfully created and verified ${relativePath}.` };
-      } catch (error) {
+      } catch (error: unknown) {
+        // Remove a partially created file only when it still exactly matches our own payload.
+        if (createdByAgent) {
+          try {
+            const current = new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(uri));
+            if (current === createContent) await vscode.workspace.fs.delete(uri);
+          } catch { /* No created file to compensate, or it has changed since creation. */ }
+        }
+        this.logger?.write({ level: 'error', event: 'workspace.file_create_failed', details: { path: relativePath, reason: error instanceof Error ? error.message : String(error) } });
         this.reportProgress({ id, path: relativePath, stage: 'failed', current: 0, total: 1, message: error instanceof Error ? error.message : String(error) });
         throw error;
       }
@@ -450,7 +463,14 @@ export class ToolRegistry {
       progress('saving', patchResult.patches.length, 'Saving the updated file…');
       const saved = await document.save();
       if (!saved) {
-        throw new Error('The patch is applied in the editor but VS Code could not save it to disk. Review the editor and save manually.');
+        // Compensate in the editor only if it still contains exactly our approved result.
+        // This preserves the original unsaved snapshot when the user had dirty changes.
+        if (document.getText() === patchResult.text) {
+          const rollback = new vscode.WorkspaceEdit();
+          rollback.replace(uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), originalText);
+          await vscode.workspace.applyEdit(rollback);
+        }
+        throw new Error('VS Code could not save the approved patch. The editor was restored to its pre-edit snapshot when safe; review and save manually if the document was already dirty.');
       }
 
       progress('verifying', patchResult.patches.length, 'Verifying the saved file against the approved result…');
@@ -459,12 +479,14 @@ export class ToolRegistry {
         throw new Error('Post-save verification did not match the approved patch. The editor contents were preserved; inspect the file before continuing.');
       }
 
-      await vscode.window.showTextDocument(document, { preview: false, preserveFocus: true });
+      try { await vscode.window.showTextDocument(document, { preview: false, preserveFocus: true }); }
+      catch (error: unknown) { this.logger?.write({ level: 'warn', event: 'workspace.open_edited_file_failed', details: { path: relativePath, reason: error instanceof Error ? error.message : String(error) } }); }
       progress('completed', patchResult.patches.length, `Saved and verified ${patchResult.patches.length} targeted change${patchResult.patches.length === 1 ? '' : 's'}.`);
       return {
         content: `Successfully applied and verified ${patchResult.patches.length} targeted edit${patchResult.patches.length === 1 ? '' : 's'} in ${relativePath}. All text outside the approved exact-match sections was preserved.`,
       };
-    } catch (error) {
+    } catch (error: unknown) {
+      this.logger?.write({ level: 'error', event: 'workspace.file_edit_failed', details: { path: relativePath, reason: error instanceof Error ? error.message : String(error) } });
       progress('failed', 0, error instanceof Error ? error.message : String(error));
       throw error;
     }
@@ -527,16 +549,18 @@ export class ToolRegistry {
         ].join('\n'),
         status: 'success',
       };
-    } catch (error: any) {
-      const timedOut = error?.killed === true || error?.signal === 'SIGTERM' || error?.code === 'ETIMEDOUT';
+    } catch (error: unknown) {
+      const details = asCommandError(error);
+      this.logger?.write({ level: 'warn', event: 'terminal.command_failed', details: { command, cwd, code: String(details.code ?? 'unknown'), reason: details.message ?? 'non-zero exit' } });
+      const timedOut = details.killed === true || details.signal === 'SIGTERM' || details.code === 'ETIMEDOUT';
       return {
         content: [
           'Command execution result: FAILURE',
           `Command: ${command}`,
           `Working directory: ${cwd}`,
-          `Exit code: ${typeof error?.code === 'number' ? error.code : 'unknown'}`,
-          `Standard output:\n${String(error?.stdout || '(empty)').slice(0, 7000)}`,
-          `Standard error:\n${String(error?.stderr || error?.message || '(empty)').slice(0, 2000)}`,
+          `Exit code: ${typeof details.code === 'number' ? details.code : 'unknown'}`,
+          `Standard output:\n${String(details.stdout || '(empty)').slice(0, 7000)}`,
+          `Standard error:\n${String(details.stderr || details.message || '(empty)').slice(0, 2000)}`,
           `Timed out: ${timedOut ? 'yes' : 'no'}`,
         ].join('\n'),
         isError: true,
@@ -574,4 +598,19 @@ function createUnifiedDiff(oldText: string, newText: string): string {
   const output = rows.map((row) => `${row.kind === 'add' ? '+' : row.kind === 'remove' ? '-' : ' '} ${row.text}`);
   if (oldLines.length > max || newLines.length > max) output.push('… diff preview truncated …');
   return output.join('\n');
+}
+
+interface CommandErrorDetails { code?: string | number; signal?: string | null; killed?: boolean; stdout?: string; stderr?: string; message?: string; }
+
+function asCommandError(error: unknown): CommandErrorDetails {
+  if (!error || typeof error !== 'object') return { message: String(error) };
+  const value = error as Record<string, unknown>;
+  return {
+    code: typeof value.code === 'string' || typeof value.code === 'number' ? value.code : undefined,
+    signal: typeof value.signal === 'string' ? value.signal : null,
+    killed: value.killed === true,
+    stdout: typeof value.stdout === 'string' ? value.stdout : undefined,
+    stderr: typeof value.stderr === 'string' ? value.stderr : undefined,
+    message: typeof value.message === 'string' ? value.message : undefined,
+  };
 }

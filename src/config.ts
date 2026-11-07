@@ -101,6 +101,7 @@ export interface ApprovalPayload {
   newPreview?: string;
   diff?: string;
   command?: string;
+  patchCount?: number;
 }
 
 export interface ChatMemory {

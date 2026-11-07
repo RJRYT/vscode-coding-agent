@@ -1,8 +1,4 @@
-import {
-  ChatMessage,
-  ModelResponse,
-  ToolCall,
-} from './config';
+import type { ChatMessage, ModelResponse, ToolCall } from './config';
 
 export class ModelClient {
   private readonly baseUrl: string;
@@ -10,12 +6,8 @@ export class ModelClient {
   private readonly model: string;
   private readonly maxTokens: number;
   private readonly reasoning: boolean;
-  private readonly persona: string;
-  private readonly memoryEnabled: boolean;
   private readonly onDelta?: (text: string) => void;
   private readonly onReasoningDelta?: (text: string) => void;
-  private readonly onToolStart?: (name: string, args: unknown) => void;
-  private readonly onToolDone?: (name: string, result: string) => void;
 
   constructor({
     baseUrl,
@@ -23,36 +15,24 @@ export class ModelClient {
     model,
     maxTokens,
     reasoning,
-    persona,
-    memoryEnabled,
     onDelta,
     onReasoningDelta,
-    onToolStart,
-    onToolDone,
   }: {
     baseUrl: string;
     apiKey: string;
     model: string;
     maxTokens: number;
     reasoning: boolean;
-    persona?: string;
-    memoryEnabled?: boolean;
     onDelta?: (text: string) => void;
     onReasoningDelta?: (text: string) => void;
-    onToolStart?: (name: string, args: unknown) => void;
-    onToolDone?: (name: string, result: string) => void;
   }) {
     this.baseUrl = baseUrl;
     this.apiKey = apiKey;
     this.model = model;
     this.maxTokens = maxTokens;
     this.reasoning = reasoning;
-    this.persona = persona ?? '';
-    this.memoryEnabled = memoryEnabled ?? false;
     this.onDelta = onDelta;
     this.onReasoningDelta = onReasoningDelta;
-    this.onToolStart = onToolStart;
-    this.onToolDone = onToolDone;
   }
 
   async request(

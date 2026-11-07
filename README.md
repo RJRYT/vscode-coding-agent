@@ -2,7 +2,7 @@
 
 A VS Code workspace coding agent powered by NVIDIA Nemotron 3.5 Super VL 120B A12B. It can inspect your project, search code, prepare targeted patches, and run approved checks.
 
-## 0.2.14 reliability and approval UI update
+## 0.2.15 maintainability and extensibility update
 
 - Added a visible assistant loading state and clearer transitions while thinking, running tools, waiting for approval, applying edits, stopping, and completing requests.
 - Tool calls and their results are saved with the conversation and reconstructed when a chat is reopened. Chat persistence now uses an in-memory workspace cache and ordered writes to avoid dropping tool history during rapid updates.
@@ -108,3 +108,25 @@ This is not full Codex parity. Patch application is exact-anchor based and the a
 - Removed the runtime dependency on jsDelivr/remote Markdown scripts. The webview now renders basic Markdown locally, so its startup and button handlers do not depend on external network availability.
 - Added a visible in-panel error banner and extension-host error notifications for webview/runtime failures.
 - Registered the webview message listener before setting its HTML to avoid losing the initial ready handshake.
+
+
+## Architecture and maintainability updates
+
+- `resources/webview.html` contains the webview markup, styles, and client script. The extension injects a per-view CSP and script nonce at runtime.
+- `resources/system-prompt.md` contains the engineering system prompt. `AgentLoop` fills only explicit workspace/persona/preference/memory placeholders.
+- `ChatManager` owns chat metadata and persistence coordination; `ToolDispatcher` validates and routes tool calls; `ContextCollector` adapts context capture and formatting.
+- `toolValidation.ts` centralizes tool name, shape, required-field, and size validation without adding a schema dependency.
+- `ContextSourceRegistry` allows extensions or future built-in modules to register additional opt-in context sources. Register a source with `contextSources.register({ id, label, maxChars, collect })`; dispose the returned `vscode.Disposable` to unregister it. Registered sources automatically appear in the composer context menu and are collected only when selected.
+- `AgentLogger` writes structured JSON events to the **Nemotron Agent** Output Channel. Search skips and failed edits/commands include actionable metadata without logging file contents or secrets.
+- `ChatStore.flush()` can be awaited by tests or shutdown-sensitive flows to wait for queued workspace-state writes.
+
+No runtime dependency was added for validation or logging.
+
+### Additional tests
+
+New tests cover centralized tool validation and dispatch, chat metadata behavior, workspace-state persistence, model SSE parsing, and pluggable context sources. Run `npm test`, `npm run lint`, and `npm run compile` in an environment with the lockfile dependencies installed.
+
+
+### 0.2.15 implementation notes
+
+This release extracts the webview and engineering prompt into runtime resources, introduces typed webview and tool argument boundaries, separates chat persistence/context collection/tool dispatch into focused modules, adds structured output-channel diagnostics, and expands unit coverage for storage, model streaming, validation, and dispatch. Failed new-file writes are compensated only when the file still matches the agent-created payload; failed editor saves attempt a guarded in-memory rollback.

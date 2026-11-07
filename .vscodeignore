@@ -5,3 +5,7 @@ node_modules/**
 .gitignore
 tsconfig.json
 *.vsix
+scripts/**
+tests/**
+resources/**
+dist/tests/**

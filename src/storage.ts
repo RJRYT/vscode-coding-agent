@@ -43,7 +43,13 @@ export class ChatStore {
     const previous = this.writes.get(key) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(() => this.context.workspaceState.update(key, snapshot));
     this.writes.set(key, next);
-    void next.catch(() => this.writes.delete(key));
+    void next.catch(() => {
+      if (this.writes.get(key) === next) this.writes.delete(key);
+    });
+  }
+
+  async flush(): Promise<void> {
+    await Promise.all([...this.writes.values()]);
   }
 
   listChats(): ChatSummary[] {

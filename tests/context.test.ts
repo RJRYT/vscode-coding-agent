@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('vscode', () => ({}));
+vi.mock('vscode', () => ({ Disposable: class { constructor(private readonly callback: () => void) {} dispose() { this.callback(); } } }));
 
-import { formatWorkspaceContext, normalizeContextOptions, WorkspaceContext } from '../src/context';
+import { contextSources, formatWorkspaceContext, normalizeContextOptions, WorkspaceContext } from '../src/context';
 
 describe('workspace context helpers', () => {
   it('enables only explicitly selected context types', () => {
@@ -15,6 +15,16 @@ describe('workspace context helpers', () => {
       selectedCode: false,
       problems: false,
     });
+  });
+
+
+  it('supports registered context sources without changing core context types', () => {
+    const disposable = contextSources.register({ id: 'gitHistory', label: 'Git History', maxChars: 100, collect: () => 'commit abc123' });
+    try {
+      expect(normalizeContextOptions({ gitHistory: true }).gitHistory).toBe(true);
+      const context: WorkspaceContext = { capturedAt: '2026-11-06T10:00:00.000Z', included: ['Git History'], unavailable: [], extensions: { gitHistory: 'commit abc123' } };
+      expect(formatWorkspaceContext(context)).toContain('EXTENSION CONTEXT: gitHistory');
+    } finally { disposable.dispose(); }
   });
 
   it('does not attach disabled or absent context sections', () => {
