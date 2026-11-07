@@ -129,6 +129,11 @@ export class ToolRegistry {
             properties: {
               path: { type: 'string', description: 'Workspace-relative path.' },
               summary: { type: 'string', description: 'Short explanation of the change.' },
+              newText: { type: 'string', description: 'Compatibility fallback for a single edit only. Prefer placing newText inside edits[0].' },
+              new_text: { type: 'string' },
+              replacement: { type: 'string' },
+              replacementText: { type: 'string' },
+              content: { type: 'string' },
               edits: {
                 type: 'array',
                 minItems: 1,
@@ -140,8 +145,15 @@ export class ToolRegistry {
                     oldText: { type: 'string', description: 'Exact existing snippet including enough surrounding context to occur exactly once. Large snippets are supported.' },
                     newText: { type: 'string', description: 'Canonical replacement field. Always provide this field. An empty string intentionally deletes the matched oldText. Preserve unrelated content unless intentionally rewriting the full file.' },
                     replacement: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
+                    replacementText: { type: 'string' },
+                    replacement_text: { type: 'string' },
                     new_text: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
+                    new_content: { type: 'string' },
+                    updatedText: { type: 'string' },
+                    replaceWith: { type: 'string' },
                     after: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
+                    afterText: { type: 'string' },
+                    insertText: { type: 'string' },
                     content: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
                   },
                   required: ['oldText', 'newText'],
@@ -199,7 +211,35 @@ export class ToolRegistry {
       text = openDocument.getText();
       sourceLabel = openDocument.isDirty ? 'live editor buffer; includes unsaved changes' : 'open editor buffer';
     } else {
-      const bytes = await vscode.workspace.fs.readFile(uri);
+      let bytes: Uint8Array;
+      try {
+        bytes = await vscode.workspace.fs.readFile(uri);
+      } catch (error: unknown) {
+        if (isFileNotFound(error)) {
+          const parent = path.posix.dirname(relativePath.replace(/\\/g, '/'));
+          const siblings = await Promise.resolve(vscode.workspace.findFiles(
+            parent === '.' ? '*' : `${parent}/*`, EXCLUDES, 30
+          )).catch(() => [] as vscode.Uri[]);
+          const basenameToken = path.posix.basename(relativePath).toLowerCase().split('.')[0];
+          let suggestions = siblings
+            .map((candidate: vscode.Uri) => vscode.workspace.asRelativePath(candidate, false))
+            .filter((candidate: string) => basenameToken && candidate.toLowerCase().includes(basenameToken))
+            .slice(0, 8);
+          if (!suggestions.length && basenameToken) {
+            const workspaceFiles = await Promise.resolve(vscode.workspace.findFiles('**/*', EXCLUDES, 2500)).catch(() => [] as vscode.Uri[]);
+            suggestions = workspaceFiles
+              .map((candidate: vscode.Uri) => vscode.workspace.asRelativePath(candidate, false))
+              .filter((candidate) => candidate.toLowerCase().includes(basenameToken))
+              .slice(0, 8);
+          }
+          return {
+            content: `File not found in the current workspace: ${relativePath}. This is a missing-path result, not a read failure. Do not retry this same path. Use list_workspace_files or search_workspace to discover the real filename. If this is a genuinely new file requested by the user, create it with propose_file_edit using createContent.\n${suggestions.length ? `Similar existing paths:\n${suggestions.join('\n')}` : `No similar files were found under ${parent}.`}`,
+            isError: true,
+            status: 'failed',
+          };
+        }
+        throw error;
+      }
       if (bytes.byteLength > MAX_FILE_READ_BYTES) {
         throw new Error('File is larger than 50 MB. Use workspace search to inspect a relevant section.');
       }
@@ -591,7 +631,9 @@ export class ToolRegistry {
 
 function isFileNotFound(error: unknown): boolean {
   const e = error as { code?: string; name?: string; message?: string } | undefined;
-  return e?.code === 'FileNotFound' || e?.name === 'FileNotFound' || String(e?.message || '').includes('FileNotFound');
+  const message = String(e?.message || '');
+  return e?.code === 'FileNotFound' || e?.code === 'ENOENT' || e?.name === 'FileNotFound' ||
+    /FileNotFound|ENOENT|no such file or directory/i.test(message);
 }
 
 
@@ -633,3 +675,6 @@ function asCommandError(error: unknown): CommandErrorDetails {
     message: typeof value.message === 'string' ? value.message : undefined,
   };
 }
+
+
+

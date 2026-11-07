@@ -3,7 +3,7 @@
     "module": "commonjs",
     "target": "ES2022",
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "lib": [
       "ES2022",
       "DOM"
@@ -15,6 +15,7 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "src"
+    "src",
+    "tests"
   ]
 }

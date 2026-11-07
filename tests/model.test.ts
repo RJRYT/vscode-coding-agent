@@ -27,3 +27,16 @@ describe('ModelClient', () => {
     await expect(client.request(new AbortController().signal, [], [])).rejects.toThrow(/401/);
   });
 });
+
+it('normalizes providers that return tool arguments as an object', async () => {
+  const events = [
+    `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call-object', function: { name: 'propose_file_edit', arguments: { path: 'src/a.ts', summary: 'Edit', edits: [{ oldText: 'before', newText: 'after' }] } } }] } }] })}\n\n`,
+    'data: [DONE]\n\n',
+  ].join('');
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({
+    start(controller) { controller.enqueue(new TextEncoder().encode(events)); controller.close(); },
+  }), { status: 200, headers: { 'content-type': 'text/event-stream' } })));
+  const client = new ModelClient({ baseUrl: 'https://example.test/v1', apiKey: 'key', model: 'test', maxTokens: 1000, reasoning: false });
+  const result = await client.request(new AbortController().signal, [{ role: 'user', content: 'edit' }], []);
+  expect(JSON.parse(result.toolCalls[0].function.arguments).edits[0].newText).toBe('after');
+});

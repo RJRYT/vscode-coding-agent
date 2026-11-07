@@ -132,8 +132,16 @@ export class ModelClient {
           };
           if (callObj.id) existing.id = String(callObj.id);
           if (callObj.function?.name) existing.function.name += String(callObj.function.name);
-          if (callObj.function?.arguments)
-            existing.function.arguments += String(callObj.function.arguments);
+          const argumentDelta = callObj.function?.arguments;
+          if (typeof argumentDelta === 'string') {
+            existing.function.arguments += argumentDelta;
+          } else if (argumentDelta && typeof argumentDelta === 'object' && !Array.isArray(argumentDelta)) {
+            // A few OpenAI-compatible providers return already-decoded
+            // argument objects instead of the protocol's JSON string.
+            // Preserve the object by serializing it, rather than turning it
+            // into the unusable string "[object Object]".
+            existing.function.arguments = JSON.stringify(argumentDelta);
+          }
           toolCalls.set(index, existing);
         }
       }

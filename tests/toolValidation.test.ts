@@ -81,3 +81,30 @@ describe('tool argument validation', () => {
     expect(validateToolArguments('run_terminal_command', { command: 'npm test', reason: 'Run tests' }).name).toBe('run_terminal_command');
   });
 });
+
+it('unwraps JSON-encoded arguments and recognized gateway envelopes', () => {
+  expect(parseToolArguments(JSON.stringify(JSON.stringify({ path: 'src/index.ts' })))).toEqual({ path: 'src/index.ts' });
+  expect(parseToolArguments(JSON.stringify({ arguments: JSON.stringify({ path: 'src/index.ts' }) }))).toEqual({ path: 'src/index.ts' });
+});
+
+it('normalizes object-wrapped replacement text from compatible providers', () => {
+  const result = validateToolArguments('propose_file_edit', {
+    path: 'src/a.ts', summary: 'Edit',
+    edits: [{ oldText: 'before', replacement: { text: 'after' } }],
+  });
+  expect(result).toMatchObject({ args: { edits: [{ oldText: 'before', newText: 'after' }] } });
+});
+
+it('uses a top-level replacement only when there is exactly one edit', () => {
+  const result = validateToolArguments('propose_file_edit', {
+    path: 'src/a.ts', summary: 'Edit', edits: [{ oldText: 'before' }], newText: 'after',
+  });
+  expect(result).toMatchObject({ args: { edits: [{ oldText: 'before', newText: 'after' }] } });
+});
+
+it('does not apply a top-level replacement ambiguously to multiple edits', () => {
+  expect(() => validateToolArguments('propose_file_edit', {
+    path: 'src/a.ts', summary: 'Edit',
+    edits: [{ oldText: 'one' }, { oldText: 'two' }], newText: 'replacement',
+  })).toThrow(/missing replacement text/);
+});

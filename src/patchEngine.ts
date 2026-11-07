@@ -41,9 +41,149 @@ function normalizedOffsetToSource(source: string, normalizedOffset: number): num
   return source.length;
 }
 
+
+interface AnchorMatch { start: number; end: number; replacementText: string; mode: string }
+
+function findUnique(source: string, anchor: string): { start: number; end: number } | undefined {
+  if (!anchor) return undefined;
+  const start = source.indexOf(anchor);
+  if (start < 0) return undefined;
+  if (source.indexOf(anchor, start + 1) >= 0) {
+    throw new Error('ambiguous');
+  }
+  return { start, end: start + anchor.length };
+}
+
+/** Decode a model's accidentally double-escaped source snippet, e.g. \"src\" -> "src". */
+function decodeEscapedAnchor(value: string): string | undefined {
+  if (!value.includes('\\"') && !(value.startsWith('"') && value.endsWith('"'))) return undefined;
+  let current = value;
+  let changed = false;
+  for (let depth = 0; depth < 2; depth++) {
+    try {
+      const decoded: unknown = current.startsWith('"') && current.endsWith('"')
+        ? JSON.parse(current)
+        : JSON.parse(`"${current}"`);
+      if (typeof decoded !== 'string' || decoded === current) break;
+      current = decoded;
+      changed = true;
+      if (!current.includes('\\"')) break;
+    } catch {
+      break;
+    }
+  }
+  return changed && current !== value ? current : undefined;
+}
+
+function lineRecords(value: string): Array<{ text: string; start: number; end: number }> {
+  const records: Array<{ text: string; start: number; end: number }> = [];
+  let start = 0;
+  for (let index = 0; index <= value.length; index++) {
+    if (index === value.length || value[index] === '\n') {
+      const end = index > start && value[index - 1] === '\r' ? index - 1 : index;
+      records.push({ text: value.slice(start, end), start, end });
+      start = index + 1;
+    }
+  }
+  return records;
+}
+
+/**
+ * Conservative formatting recovery: match a complete contiguous line block
+ * while ignoring only leading/trailing horizontal whitespace on each line.
+ * Internal spaces, tokens, punctuation and line order must still match.
+ */
+function findWhitespaceEquivalent(source: string, anchor: string, replacement: string): AnchorMatch | undefined {
+  const anchorLines = lineRecords(normalizeNewlines(anchor));
+  const sourceLines = lineRecords(source);
+  if (!anchorLines.length || anchorLines.some((line) => !line.text.trim())) return undefined;
+  const expected = anchorLines.map((line) => line.text.trim());
+  const matches: number[] = [];
+  for (let start = 0; start <= sourceLines.length - expected.length; start++) {
+    let matchesBlock = true;
+    for (let offset = 0; offset < expected.length; offset++) {
+      if (sourceLines[start + offset].text.trim() !== expected[offset]) {
+        matchesBlock = false;
+        break;
+      }
+    }
+    if (matchesBlock) matches.push(start);
+    if (matches.length > 1) throw new Error('ambiguous');
+  }
+  if (!matches.length) return undefined;
+  const first = sourceLines[matches[0]];
+  const last = sourceLines[matches[0] + expected.length - 1];
+  const replacementLines = normalizeNewlines(replacement).split('\n');
+  const adjusted = replacementLines.map((line, index) => {
+    if (!line.trim()) return line;
+    const anchorLine = anchorLines[Math.min(index, anchorLines.length - 1)].text;
+    const sourceLine = sourceLines[matches[0] + Math.min(index, expected.length - 1)].text;
+    const anchorIndent = anchorLine.match(/^[\t ]*/)?.[0] ?? '';
+    const sourceIndent = sourceLine.match(/^[\t ]*/)?.[0] ?? '';
+    if (anchorIndent === sourceIndent) return line;
+    if (anchorIndent && line.startsWith(anchorIndent)) return sourceIndent + line.slice(anchorIndent.length);
+    if (!anchorIndent) return sourceIndent + line;
+    return line;
+  }).join('\n');
+  return {
+    start: first.start,
+    end: last.end,
+    replacementText: withNewlineStyle(adjusted, dominantNewline(source)),
+    mode: 'line-whitespace-normalized',
+  };
+}
+
+function resolveAnchor(source: string, oldText: string, newText: string): AnchorMatch | undefined {
+  try {
+    const exact = findUnique(source, oldText);
+    if (exact) return { ...exact, replacementText: newText, mode: 'exact' };
+  } catch { throw new Error('ambiguous'); }
+
+  const normalizedSource = normalizeNewlines(source);
+  const normalizedAnchor = normalizeNewlines(oldText);
+  try {
+    const normalized = findUnique(normalizedSource, normalizedAnchor);
+    if (normalized) {
+      return {
+        start: normalizedOffsetToSource(source, normalized.start),
+        end: normalizedOffsetToSource(source, normalized.end),
+        replacementText: withNewlineStyle(newText, dominantNewline(source)),
+        mode: 'line-ending-normalized',
+      };
+    }
+  } catch { throw new Error('ambiguous'); }
+
+  const decoded = decodeEscapedAnchor(oldText);
+  if (decoded) {
+    try {
+      const escaped = findUnique(source, decoded);
+      if (escaped) return { ...escaped, replacementText: newText, mode: 'json-escape-normalized' };
+    } catch { throw new Error('ambiguous'); }
+    try {
+      const escapedNormalized = findUnique(normalizedSource, normalizeNewlines(decoded));
+      if (escapedNormalized) {
+        return {
+          start: normalizedOffsetToSource(source, escapedNormalized.start),
+          end: normalizedOffsetToSource(source, escapedNormalized.end),
+          replacementText: withNewlineStyle(newText, dominantNewline(source)),
+          mode: 'json-escape-and-line-ending-normalized',
+        };
+      }
+    } catch { throw new Error('ambiguous'); }
+  }
+
+  const whitespace = findWhitespaceEquivalent(source, oldText, newText);
+  if (whitespace) return whitespace;
+  if (decoded) {
+    const decodedWhitespace = findWhitespaceEquivalent(source, decoded, newText);
+    if (decodedWhitespace) return { ...decodedWhitespace, mode: 'json-escape-and-whitespace-normalized' };
+  }
+  return undefined;
+}
+
 /**
  * Resolve exact, unique text anchors against one immutable source snapshot.
- * No fuzzy matching is used: a missing or ambiguous anchor is rejected.
+ * Only exact, line-ending, JSON-escape, and conservative complete-line whitespace recovery are allowed. Ambiguous anchors are rejected.
  */
 export function applyExactTextPatches(source: string, changes: TextPatch[]): PatchResult {
   if (!Array.isArray(changes) || changes.length === 0) {
@@ -81,41 +221,23 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
     // An exact full-snapshot replacement is safe: it is still anchored to the
     // complete current contents and the caller revalidates the snapshot after approval.
 
-    let start = source.indexOf(change.oldText);
-    let end = start < 0 ? -1 : start + change.oldText.length;
-    let replacementText = change.newText;
-    let second = start < 0 ? -1 : source.indexOf(change.oldText, start + 1);
-
-    // VS Code documents commonly expose LF while files read from disk or
-    // generated tool arguments may contain CRLF. Normalize only line endings;
-    // never silently ignore indentation or other source-code whitespace.
-    if (start < 0) {
-      const normalizedSource = normalizeNewlines(source);
-      const normalizedAnchor = normalizeNewlines(change.oldText);
-      const normalizedStart = normalizedSource.indexOf(normalizedAnchor);
-      if (normalizedStart >= 0) {
-        const normalizedSecond = normalizedSource.indexOf(normalizedAnchor, normalizedStart + 1);
-        if (normalizedSecond >= 0) {
-          throw new Error(`Edit ${index + 1} is ambiguous after line-ending normalization. Include more surrounding context so the anchor matches exactly once.`);
-        }
-        start = normalizedOffsetToSource(source, normalizedStart);
-        end = normalizedOffsetToSource(source, normalizedStart + normalizedAnchor.length);
-        replacementText = withNewlineStyle(change.newText, dominantNewline(source));
-        second = -1;
+    let match: AnchorMatch | undefined;
+    try {
+      match = resolveAnchor(source, change.oldText, change.newText);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'ambiguous') {
+        throw new Error(`Edit ${index + 1} is ambiguous. Include more surrounding source context so the anchor matches exactly once.`);
       }
+      throw error;
     }
-
-    if (start < 0) {
+    if (!match) {
       const firstLine = change.oldText.split(/\r?\n/, 1)[0].trim().slice(0, 100);
       throw new Error(
-        `Edit ${index + 1} could not be matched in the current file snapshot. The anchor begins with: ${JSON.stringify(firstLine)}. The file may have changed since it was read, or indentation/content differs. Call read_file again and rebuild this edit from the returned snapshot. Only CRLF/LF differences are normalized automatically.`
+        `Edit ${index + 1} could not be matched in the current file snapshot. Anchor preview: ${JSON.stringify(firstLine)}. The anchor may be JSON-escaped, formatted differently, or stale. Reread the file and copy the exact source text into oldText; do not include JSON escaping around source quotes.`
       );
     }
-    if (second >= 0) {
-      throw new Error(
-        `Edit ${index + 1} is ambiguous because its oldText occurs more than once. Include more surrounding context so it matches exactly once.`
-      );
-    }
+    const { start, end, replacementText } = match;
+
 
     resolved.push({ ...change, newText: replacementText, start, end });
   }

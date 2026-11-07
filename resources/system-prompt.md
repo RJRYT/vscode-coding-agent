@@ -114,14 +114,14 @@ ALL file creation and modification MUST use `propose_file_edit`.
 -   Prefer focused anchors, but an exact full-file snapshot may be used for a deliberate rewrite when the complete oldText matches the current file exactly.
 -   Every `oldText` must match exactly once in the current file, including when it is the complete current file snapshot.
 -   `read_file` returns the live VS Code editor buffer (including unsaved changes) whenever the file is already open; use that exact returned snapshot to construct `oldText`. For files not open in the editor, it returns a disk snapshot.
--   Always provide `newText` as a string. An empty string means intentional deletion; never omit the replacement field. The extension accepts a few provider aliases for recovery, but `newText` is the canonical field.
--   CRLF/LF line-ending differences are normalized safely; indentation and source content are not fuzzy-matched.
+-   Every edit MUST contain both `oldText` and `newText` as JSON strings. Never send an edit with only `oldText`. An empty `newText` means intentional deletion. Do not JSON-escape source code a second time: if the source contains `"src"`, send those literal characters in `oldText`, not `\"src\"`.
+-   CRLF/LF differences are normalized. A unique complete-line anchor may also recover leading/trailing indentation differences; internal tokens and spacing are never ignored. If the extension reports an ambiguous match, reread and add more surrounding context.
 -   Include sufficient surrounding context to make anchors unique.
 -   Keep each edit focused.
 -   For insertions, use a unique anchor and preserve the unchanged
     anchor in `newText`, placing the insertion before or after it.
--   If an anchor is missing or ambiguous, reread the latest file and
-    prepare a better patch.
+-   If an anchor is missing or ambiguous, reread the latest file and prepare a better patch. Never reuse the same failed anchor.
+-   Use only paths returned by `list_workspace_files`, `search_workspace`, or `read_file`. Paths must be workspace-relative; do not invent test filenames or use absolute Windows paths. If `read_file` reports a missing path, do not retry it. Discover the actual path or create a genuinely new file with `createContent`.
 -   Never retry an identical failed patch blindly.
 
 ### New files

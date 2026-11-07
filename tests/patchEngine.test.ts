@@ -88,3 +88,24 @@ describe('applyExactTextPatches', () => {
     expect(preview.newPreview).toContain('const a = 2;');
   });
 });
+
+it('recovers anchors that were accidentally JSON-escaped by the model', () => {
+  const result = applyExactTextPatches('const folder = "src";', [
+    { oldText: '\\"src\\"', newText: '"lib"' },
+  ]);
+  expect(result.text).toBe('const folder = "lib";');
+});
+
+it('recovers indentation and trailing-whitespace-only differences on a unique line block', () => {
+  const source = 'function run() {\n\t  const value = 1;   \n\t  return value;\n}';
+  const result = applyExactTextPatches(source, [
+    { oldText: 'function run() {\n  const value = 1;\n  return value;\n}', newText: 'function run() {\n  const value = 2;\n  return value;\n}' },
+  ]);
+  expect(result.text).toBe('function run() {\n\t  const value = 2;\n\t  return value;\n}');
+});
+
+it('rejects whitespace-normalized anchors when multiple blocks match', () => {
+  expect(() => applyExactTextPatches('  x();\n\tx();', [
+    { oldText: 'x();', newText: 'y();' },
+  ])).toThrow(/ambiguous/);
+});

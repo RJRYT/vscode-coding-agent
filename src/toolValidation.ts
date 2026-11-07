@@ -15,22 +15,28 @@ export interface ValidatedEdit { oldText: string; newText: string }
  * casing/names. Normalize those variants at the boundary, but never guess an
  * omitted replacement (which could accidentally delete code).
  */
-function normalizeEditFields(item: ToolArguments, index: number): ValidatedEdit {
+function normalizeEditFields(item: ToolArguments, index: number, inheritedReplacement?: string, parentKeys: string[] = []): ValidatedEdit {
   const oldKeys = ['oldText', 'oldtext', 'old_text', 'originalText', 'original_text', 'original', 'search', 'find', 'old_content', 'old_code', 'before', 'old'];
-  const newKeys = ['newText', 'newtext', 'new_text', 'replacement', 'replacementText', 'replacement_text', 'replacement_content', 'newContent', 'new_content', 'replace', 'after', 'insert', 'value', 'text', 'content', 'insertText', 'replacementValue', 'new_value', 'new'];
+  const newKeys = ['newText', 'newtext', 'new_text', 'replacement', 'replacementText', 'replacement_text', 'replacement_content', 'replacementContent', 'updatedText', 'updated_text', 'newContent', 'new_content', 'replaceWith', 'replace_with', 'replace', 'afterText', 'after_text', 'after', 'insertText', 'insert_text', 'insert', 'value', 'text', 'content', 'body', 'replacementValue', 'new_value', 'new'];
   const pickString = (keys: string[]): string | undefined => {
     for (const key of keys) {
       if (typeof item[key] === 'string') return item[key] as string;
+      if (isRecord(item[key])) {
+        const nested = item[key] as ToolArguments;
+        for (const nestedKey of ['text', 'content', 'value', 'code']) {
+          if (typeof nested[nestedKey] === 'string') return nested[nestedKey] as string;
+        }
+      }
     }
     return undefined;
   };
   const oldText = pickString(oldKeys);
-  const newText = pickString(newKeys);
+  const newText = pickString(newKeys) ?? inheritedReplacement;
   if (oldText === undefined || oldText.length === 0) {
     throw new Error(`Edit ${index + 1} is missing its original text anchor. Use oldText. Received keys: ${Object.keys(item).join(', ') || '(none)'}.`);
   }
   if (newText === undefined) {
-    throw new Error(`Edit ${index + 1} is missing replacement text. Use newText (or new_text/replacement/replacementText/after). Received keys: ${Object.keys(item).join(', ') || '(none)'}. The extension will not guess an empty replacement because that would delete code.`);
+    throw new Error(`Edit ${index + 1} is missing replacement text. Supply a string newText on this edit (or a top-level newText when there is exactly one edit). Received edit keys: ${Object.keys(item).join(', ') || '(none)'}; parent keys: ${parentKeys.join(', ') || '(none)'}. If this is a deletion, explicitly send newText: \"\". The extension will not guess replacement code.`);
   }
   return { oldText, newText };
 }
@@ -89,8 +95,26 @@ function optionalLimit(args: ToolArguments, key: string, max: number): number | 
 
 export function parseToolArguments(raw: string): ToolArguments {
   let parsed: unknown;
-  try { parsed = JSON.parse(raw); }
-  catch (error: unknown) {
+  try {
+    parsed = JSON.parse(raw);
+    // Some OpenAI-compatible gateways wrap the actual arguments in another
+    // JSON string or an `arguments`/`input` envelope. Unwrap only recognized
+    // protocol envelopes; never coerce arbitrary values into empty objects.
+    for (let depth = 0; depth < 2; depth++) {
+      if (typeof parsed === 'string') {
+        parsed = JSON.parse(parsed);
+        continue;
+      }
+      if (isRecord(parsed)) {
+        const nested = parsed.arguments ?? parsed.input;
+        if (typeof nested === 'string') {
+          parsed = JSON.parse(nested);
+          continue;
+        }
+      }
+      break;
+    }
+  } catch (error: unknown) {
     throw new Error(`Malformed tool-call JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
   return record(parsed);
@@ -113,7 +137,7 @@ export function validateToolArguments(name: string, value: unknown): ValidatedTo
       assertKeys(args, ['query', 'glob', 'limit']);
       return { name: 'search_workspace', args: { query: requiredString(args, 'query', 2000), glob: optionalString(args, 'glob', 500), limit: optionalLimit(args, 'limit', 60) } };
     case 'propose_file_edit': {
-      assertKeys(args, ['path', 'summary', 'edits', 'createContent']);
+      assertKeys(args, ['path', 'summary', 'edits', 'createContent', 'newText', 'new_text', 'replacement', 'replacementText', 'content']);
       const filePath = requiredString(args, 'path', 1024);
       const summary = requiredString(args, 'summary', 2000);
       const rawEdits = args.edits;
@@ -124,10 +148,13 @@ export function validateToolArguments(name: string, value: unknown): ValidatedTo
       if (hasEdits) {
         if (!rawEdits.length || rawEdits.length > 20) throw new Error('edits must contain between 1 and 20 entries.');
         let totalPatchChars = 0;
+        const inheritedReplacement = rawEdits.length === 1
+          ? ['newText', 'new_text', 'replacement', 'replacementText', 'content'].map((key) => args[key]).find((candidate): candidate is string => typeof candidate === 'string')
+          : undefined;
         const edits: ValidatedEdit[] = rawEdits.map((item, index) => {
           if (!isRecord(item)) throw new Error(`Edit ${index + 1} must be an object.`);
-          assertKeys(item, ['oldText', 'oldtext', 'old_text', 'originalText', 'original_text', 'original', 'search', 'find', 'old_content', 'old_code', 'before', 'old', 'newText', 'newtext', 'new_text', 'replacement', 'replacementText', 'replacement_text', 'replacement_content', 'newContent', 'new_content', 'replace', 'after', 'insert', 'value', 'text', 'content', 'insertText', 'replacementValue', 'new_value', 'new']);
-          const normalized = normalizeEditFields(item, index);
+          assertKeys(item, ['oldText', 'oldtext', 'old_text', 'originalText', 'original_text', 'original', 'search', 'find', 'old_content', 'old_code', 'before', 'old', 'newText', 'newtext', 'new_text', 'replacement', 'replacementText', 'replacement_text', 'replacement_content', 'replacementContent', 'updatedText', 'updated_text', 'newContent', 'new_content', 'replaceWith', 'replace_with', 'replace', 'afterText', 'after_text', 'after', 'insertText', 'insert_text', 'insert', 'value', 'text', 'content', 'body', 'replacementValue', 'new_value', 'new']);
+          const normalized = normalizeEditFields(item, index, inheritedReplacement, Object.keys(args));
           const oldText = normalized.oldText;
           const newText = normalized.newText;
           if (oldText.length > MAX_PATCH_TEXT_CHARS) {
