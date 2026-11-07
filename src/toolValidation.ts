@@ -9,6 +9,31 @@ export type ToolName =
   | 'run_terminal_command';
 
 export interface ValidatedEdit { oldText: string; newText: string }
+
+/**
+ * Model providers occasionally emit equivalent edit fields with different
+ * casing/names. Normalize those variants at the boundary, but never guess an
+ * omitted replacement (which could accidentally delete code).
+ */
+function normalizeEditFields(item: ToolArguments, index: number): ValidatedEdit {
+  const oldKeys = ['oldText', 'oldtext', 'old_text', 'originalText', 'original_text', 'original', 'search', 'find', 'old_content', 'old_code', 'before', 'old'];
+  const newKeys = ['newText', 'newtext', 'new_text', 'replacement', 'replacementText', 'replacement_text', 'replacement_content', 'newContent', 'new_content', 'replace', 'after', 'insert', 'value', 'text', 'content', 'insertText', 'replacementValue', 'new_value', 'new'];
+  const pickString = (keys: string[]): string | undefined => {
+    for (const key of keys) {
+      if (typeof item[key] === 'string') return item[key] as string;
+    }
+    return undefined;
+  };
+  const oldText = pickString(oldKeys);
+  const newText = pickString(newKeys);
+  if (oldText === undefined || oldText.length === 0) {
+    throw new Error(`Edit ${index + 1} is missing its original text anchor. Use oldText. Received keys: ${Object.keys(item).join(', ') || '(none)'}.`);
+  }
+  if (newText === undefined) {
+    throw new Error(`Edit ${index + 1} is missing replacement text. Use newText (or new_text/replacement/replacementText/after). Received keys: ${Object.keys(item).join(', ') || '(none)'}. The extension will not guess an empty replacement because that would delete code.`);
+  }
+  return { oldText, newText };
+}
 export type ValidatedToolCall =
   | { name: 'list_workspace_files'; args: { glob?: string; limit?: number } }
   | { name: 'read_file'; args: { path: string } }
@@ -101,11 +126,12 @@ export function validateToolArguments(name: string, value: unknown): ValidatedTo
         let totalPatchChars = 0;
         const edits: ValidatedEdit[] = rawEdits.map((item, index) => {
           if (!isRecord(item)) throw new Error(`Edit ${index + 1} must be an object.`);
-          assertKeys(item, ['oldText', 'newText']);
-          const oldText = requiredString(item, 'oldText', MAX_PATCH_TEXT_CHARS);
-          const newText = item.newText;
-          if (typeof newText !== 'string') {
-            throw new Error(`Edit ${index + 1} is missing newText or newText is not a string (received ${newText === null ? 'null' : typeof newText}).`);
+          assertKeys(item, ['oldText', 'oldtext', 'old_text', 'originalText', 'original_text', 'original', 'search', 'find', 'old_content', 'old_code', 'before', 'old', 'newText', 'newtext', 'new_text', 'replacement', 'replacementText', 'replacement_text', 'replacement_content', 'newContent', 'new_content', 'replace', 'after', 'insert', 'value', 'text', 'content', 'insertText', 'replacementValue', 'new_value', 'new']);
+          const normalized = normalizeEditFields(item, index);
+          const oldText = normalized.oldText;
+          const newText = normalized.newText;
+          if (oldText.length > MAX_PATCH_TEXT_CHARS) {
+            throw new Error(`Edit ${index + 1} oldText is ${oldText.length.toLocaleString()} characters; the per-edit maximum is ${MAX_PATCH_TEXT_CHARS.toLocaleString()}.`);
           }
           if (newText.length > MAX_PATCH_TEXT_CHARS) {
             throw new Error(`Edit ${index + 1} newText is ${newText.length.toLocaleString()} characters; the per-edit maximum is ${MAX_PATCH_TEXT_CHARS.toLocaleString()}.`);

@@ -14,6 +14,33 @@ export interface PatchResult {
   patches: ResolvedTextPatch[];
 }
 
+function normalizeNewlines(value: string): string {
+  return value.replace(/\r\n/g, '\n');
+}
+
+function dominantNewline(source: string): string {
+  const crlf = (source.match(/\r\n/g) ?? []).length;
+  const lf = (source.match(/(?<!\r)\n/g) ?? []).length;
+  return crlf > lf ? '\r\n' : '\n';
+}
+
+function withNewlineStyle(value: string, newline: string): string {
+  return normalizeNewlines(value).replace(/\n/g, newline);
+}
+
+/** Translate an offset in LF-normalized text back to the original source. */
+function normalizedOffsetToSource(source: string, normalizedOffset: number): number {
+  let normalizedIndex = 0;
+  for (let sourceIndex = 0; sourceIndex < source.length; sourceIndex++) {
+    if (normalizedIndex === normalizedOffset) return sourceIndex;
+    if (source[sourceIndex] === '\r' && source[sourceIndex + 1] === '\n') {
+      sourceIndex++; // CRLF represents one normalized LF character.
+    }
+    normalizedIndex++;
+  }
+  return source.length;
+}
+
 /**
  * Resolve exact, unique text anchors against one immutable source snapshot.
  * No fuzzy matching is used: a missing or ambiguous anchor is rejected.
@@ -54,20 +81,43 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
     // An exact full-snapshot replacement is safe: it is still anchored to the
     // complete current contents and the caller revalidates the snapshot after approval.
 
-    const start = source.indexOf(change.oldText);
+    let start = source.indexOf(change.oldText);
+    let end = start < 0 ? -1 : start + change.oldText.length;
+    let replacementText = change.newText;
+    let second = start < 0 ? -1 : source.indexOf(change.oldText, start + 1);
+
+    // VS Code documents commonly expose LF while files read from disk or
+    // generated tool arguments may contain CRLF. Normalize only line endings;
+    // never silently ignore indentation or other source-code whitespace.
     if (start < 0) {
+      const normalizedSource = normalizeNewlines(source);
+      const normalizedAnchor = normalizeNewlines(change.oldText);
+      const normalizedStart = normalizedSource.indexOf(normalizedAnchor);
+      if (normalizedStart >= 0) {
+        const normalizedSecond = normalizedSource.indexOf(normalizedAnchor, normalizedStart + 1);
+        if (normalizedSecond >= 0) {
+          throw new Error(`Edit ${index + 1} is ambiguous after line-ending normalization. Include more surrounding context so the anchor matches exactly once.`);
+        }
+        start = normalizedOffsetToSource(source, normalizedStart);
+        end = normalizedOffsetToSource(source, normalizedStart + normalizedAnchor.length);
+        replacementText = withNewlineStyle(change.newText, dominantNewline(source));
+        second = -1;
+      }
+    }
+
+    if (start < 0) {
+      const firstLine = change.oldText.split(/\r?\n/, 1)[0].trim().slice(0, 100);
       throw new Error(
-        `Edit ${index + 1} could not be matched exactly. Read the latest file contents and retry with an exact anchor.`
+        `Edit ${index + 1} could not be matched in the current file snapshot. The anchor begins with: ${JSON.stringify(firstLine)}. The file may have changed since it was read, or indentation/content differs. Call read_file again and rebuild this edit from the returned snapshot. Only CRLF/LF differences are normalized automatically.`
       );
     }
-    const second = source.indexOf(change.oldText, start + 1);
     if (second >= 0) {
       throw new Error(
         `Edit ${index + 1} is ambiguous because its oldText occurs more than once. Include more surrounding context so it matches exactly once.`
       );
     }
 
-    resolved.push({ ...change, start, end: start + change.oldText.length });
+    resolved.push({ ...change, newText: replacementText, start, end });
   }
 
   const ordered = [...resolved].sort((a, b) => a.start - b.start);

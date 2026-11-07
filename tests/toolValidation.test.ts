@@ -46,6 +46,29 @@ describe('tool argument validation', () => {
     })).toThrow(/newText is missing or newText is not a string/);
   });
 
+
+  it('normalizes common model/provider replacement aliases', () => {
+    for (const key of ['new_text', 'replacement', 'replacementText', 'replacement_text', 'after', 'new_content']) {
+      const result = validateToolArguments('propose_file_edit', {
+        path: 'src/a.ts', summary: 'Edit', edits: [{ oldText: 'before', [key]: 'after' }],
+      });
+      expect(result).toMatchObject({ name: 'propose_file_edit', args: { edits: [{ oldText: 'before', newText: 'after' }] } });
+    }
+  });
+
+  it('never converts a missing replacement into an accidental deletion', () => {
+    expect(() => validateToolArguments('propose_file_edit', {
+      path: 'src/a.ts', summary: 'Edit', edits: [{ oldText: 'before' }],
+    })).toThrow(/will not guess an empty replacement/);
+  });
+
+  it('accepts an explicitly empty newText for intentional deletion', () => {
+    const result = validateToolArguments('propose_file_edit', {
+      path: 'src/a.ts', summary: 'Delete code', edits: [{ oldText: 'obsolete', newText: '' }],
+    });
+    expect(result).toMatchObject({ args: { edits: [{ oldText: 'obsolete', newText: '' }] } });
+  });
+
   it('accepts shell operators and longer approved commands', () => {
     const command = 'npm test && npm run lint 2>&1 | tee verification.log';
     expect(validateToolArguments('run_terminal_command', { command, reason: 'Verify the project' }).name)

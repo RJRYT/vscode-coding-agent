@@ -11,6 +11,21 @@ describe('applyExactTextPatches', () => {
     expect(result.text).toBe('before\nconst greeting = "hi";\nafter\nconst count = 2;\n');
   });
 
+
+  it('matches anchors when only CRLF/LF line endings differ', () => {
+    const source = 'function greet() {\r\n  return "hello";\r\n}\r\n';
+    const result = applyExactTextPatches(source, [
+      { oldText: 'function greet() {\n  return "hello";\n}', newText: 'function greet() {\n  return "hi";\n}' },
+    ]);
+    expect(result.text).toBe('function greet() {\r\n  return "hi";\r\n}\r\n');
+  });
+
+  it('does not fuzzy-match indentation or changed source text', () => {
+    expect(() => applyExactTextPatches('  const value = 1;', [
+      { oldText: 'const  value = 1;', newText: 'const value = 2;' },
+    ])).toThrow(/could not be matched in the current file snapshot/);
+  });
+
   it('rejects anchors that do not match', () => {
     expect(() =>
       applyExactTextPatches('const a = 1;', [

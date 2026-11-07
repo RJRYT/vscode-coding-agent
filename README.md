@@ -2,6 +2,14 @@
 
 A VS Code workspace coding agent powered by NVIDIA Nemotron 3.5 Super VL 120B A12B. It can inspect your project, search code, prepare targeted patches, and run approved checks.
 
+## 0.2.20 file-edit reliability update
+
+- `read_file` now prefers the live VS Code text-document buffer for files already open, including unsaved editor changes. The patch tool and reader therefore work from the same in-memory snapshot.
+- Exact patch anchors now tolerate CRLF/LF-only differences. Replacement line endings are converted to the target file's dominant style; indentation and code content are never fuzzy-matched.
+- Tool argument normalization accepts common provider aliases such as `new_text`, `replacement`, `replacementText`, `after`, and `content`, while keeping `newText` canonical.
+- A missing replacement is still rejected rather than interpreted as an empty string, preventing accidental deletion. Explicit `newText: ""` remains a valid deletion.
+- Unmatched-anchor errors now explain that the current snapshot may have changed and instruct the agent to reread the file before rebuilding the patch.
+
 ## 0.2.15 maintainability and extensibility update
 
 - Added a visible assistant loading state and clearer transitions while thinking, running tools, waiting for approval, applying edits, stopping, and completing requests.

@@ -138,7 +138,11 @@ export class ToolRegistry {
                   type: 'object',
                   properties: {
                     oldText: { type: 'string', description: 'Exact existing snippet including enough surrounding context to occur exactly once. Large snippets are supported.' },
-                    newText: { type: 'string', description: 'Replacement text. May be large; an empty string deletes the matched oldText. Preserve unrelated content unless intentionally rewriting the full file.' },
+                    newText: { type: 'string', description: 'Canonical replacement field. Always provide this field. An empty string intentionally deletes the matched oldText. Preserve unrelated content unless intentionally rewriting the full file.' },
+                    replacement: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
+                    new_text: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
+                    after: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
+                    content: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
                   },
                   required: ['oldText', 'newText'],
                 },
@@ -184,19 +188,32 @@ export class ToolRegistry {
     if (!root) throw new Error('No workspace folder is open.');
     const uri = safeUri(relativePath, root);
     await assertPathInsideWorkspace(uri, root);
-    const bytes = await vscode.workspace.fs.readFile(uri);
-    if (bytes.byteLength > MAX_FILE_READ_BYTES) {
-      throw new Error(
-        'File is larger than 50 MB. Use editor context or workspace search to inspect a relevant section.'
-      );
+    // Prefer the open VS Code document buffer over disk bytes. The editor may
+    // contain unsaved changes; patch proposals operate on this same live buffer.
+    const openDocument = vscode.workspace.textDocuments.find((document) =>
+      document.uri.toString() === uri.toString()
+    );
+    let text: string;
+    let sourceLabel: string;
+    if (openDocument) {
+      text = openDocument.getText();
+      sourceLabel = openDocument.isDirty ? 'live editor buffer; includes unsaved changes' : 'open editor buffer';
+    } else {
+      const bytes = await vscode.workspace.fs.readFile(uri);
+      if (bytes.byteLength > MAX_FILE_READ_BYTES) {
+        throw new Error('File is larger than 50 MB. Use workspace search to inspect a relevant section.');
+      }
+      if (bytes.includes(0)) {
+        throw new Error('This appears to be a binary file. Binary file reading is not supported yet.');
+      }
+      text = Buffer.from(bytes).toString('utf8');
+      sourceLabel = 'disk snapshot';
     }
-    if (bytes.includes(0)) {
-      throw new Error(
-        'This appears to be a binary file. Binary file reading is not supported yet.'
-      );
+    if (Buffer.byteLength(text, 'utf8') > MAX_FILE_READ_BYTES) {
+      throw new Error('File is larger than 50 MB. Use workspace search to inspect a relevant section.');
     }
-    const text = Buffer.from(bytes).toString('utf8');
-    return { content: `--- ${relativePath} ---\n${text}` };
+    if (text.includes('\0')) throw new Error('This appears to be a binary file. Binary file reading is not supported yet.');
+    return { content: `--- ${relativePath} ---\nSnapshot source: ${sourceLabel}\nCaptured: ${new Date().toISOString()}\n\n${text}` };
   }
 
   getActiveEditorContext(): ToolResult {

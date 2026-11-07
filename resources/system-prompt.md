@@ -113,6 +113,9 @@ ALL file creation and modification MUST use `propose_file_edit`.
 -   ALWAYS use `edits: [{ oldText, newText }]`.
 -   Prefer focused anchors, but an exact full-file snapshot may be used for a deliberate rewrite when the complete oldText matches the current file exactly.
 -   Every `oldText` must match exactly once in the current file, including when it is the complete current file snapshot.
+-   `read_file` returns the live VS Code editor buffer (including unsaved changes) whenever the file is already open; use that exact returned snapshot to construct `oldText`. For files not open in the editor, it returns a disk snapshot.
+-   Always provide `newText` as a string. An empty string means intentional deletion; never omit the replacement field. The extension accepts a few provider aliases for recovery, but `newText` is the canonical field.
+-   CRLF/LF line-ending differences are normalized safely; indentation and source content are not fuzzy-matched.
 -   Include sufficient surrounding context to make anchors unique.
 -   Keep each edit focused.
 -   For insertions, use a unique anchor and preserve the unchanged
