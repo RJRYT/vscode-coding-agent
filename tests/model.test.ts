@@ -40,3 +40,20 @@ it('normalizes providers that return tool arguments as an object', async () => {
   const result = await client.request(new AbortController().signal, [{ role: 'user', content: 'edit' }], []);
   expect(JSON.parse(result.toolCalls[0].function.arguments).edits[0].newText).toBe('after');
 });
+
+
+it('merges partial decoded tool-argument objects across streaming deltas', async () => {
+  const events = [
+    `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call-partial', function: { name: 'propose_file_edit', arguments: { path: 'src/a.ts', summary: 'Edit', edits: [{ oldText: 'before' }] } } }] } }] })}\n\n`,
+    `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: { edits: [{ newText: 'after' }] } } }] } }] })}\n\n`,
+    'data: [DONE]\n\n',
+  ].join('');
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({
+    start(controller) { controller.enqueue(new TextEncoder().encode(events)); controller.close(); },
+  }), { status: 200, headers: { 'content-type': 'text/event-stream' } })));
+  const client = new ModelClient({ baseUrl: 'https://example.test/v1', apiKey: 'key', model: 'test', maxTokens: 1000, reasoning: false });
+  const result = await client.request(new AbortController().signal, [{ role: 'user', content: 'edit' }], []);
+  expect(JSON.parse(result.toolCalls[0].function.arguments)).toMatchObject({
+    path: 'src/a.ts', edits: [{ oldText: 'before', newText: 'after' }],
+  });
+});

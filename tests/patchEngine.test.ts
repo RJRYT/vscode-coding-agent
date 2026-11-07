@@ -109,3 +109,12 @@ it('rejects whitespace-normalized anchors when multiple blocks match', () => {
     { oldText: 'x();', newText: 'y();' },
   ])).toThrow(/ambiguous/);
 });
+
+
+it('recovers multiply escaped JSON property anchors and escaped line breaks', () => {
+  const source = '{\n  "include": [\n    "src/**/*.ts"\n  ]\n}';
+  const result = applyExactTextPatches(source, [
+    { oldText: '\\\\\"include\\\\\": [\\n    \\\\\"src/**/*.ts\\\\\"', newText: '"include": [\n    "src/**/*.tsx"' },
+  ]);
+  expect(result.text).toContain('"src/**/*.tsx"');
+});

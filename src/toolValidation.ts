@@ -41,10 +41,10 @@ function normalizeEditFields(item: ToolArguments, index: number, inheritedReplac
   return { oldText, newText };
 }
 export type ValidatedToolCall =
-  | { name: 'list_workspace_files'; args: { glob?: string; limit?: number } }
-  | { name: 'read_file'; args: { path: string } }
+  | { name: 'list_workspace_files'; args: { glob?: string; limit?: number; offset?: number } }
+  | { name: 'read_file'; args: { path: string; limit?: number; offset?: number } }
   | { name: 'get_active_editor_context'; args: Record<string, never> }
-  | { name: 'search_workspace'; args: { query: string; glob?: string; limit?: number } }
+  | { name: 'search_workspace'; args: { query: string; glob?: string; limit?: number; offset?: number } }
   | { name: 'propose_file_edit'; args: { path: string; summary: string; edits: ValidatedEdit[] } | { path: string; summary: string; createContent: string } }
   | { name: 'run_terminal_command'; args: { command: string; reason: string } };
 
@@ -93,6 +93,16 @@ function optionalLimit(args: ToolArguments, key: string, max: number): number | 
   return Number(value);
 }
 
+
+function optionalOffset(args: ToolArguments, key: string): number | undefined {
+  const value = args[key];
+  if (value === undefined || value === null) return undefined;
+  if (!Number.isInteger(value) || Number(value) < 0 || Number(value) > 100_000) {
+    throw new Error(`Argument ${key} must be an integer between 0 and 100000.`);
+  }
+  return Number(value);
+}
+
 export function parseToolArguments(raw: string): ToolArguments {
   let parsed: unknown;
   try {
@@ -125,19 +135,19 @@ export function validateToolArguments(name: string, value: unknown): ValidatedTo
   const args = record(value);
   switch (name as ToolName) {
     case 'list_workspace_files':
-      assertKeys(args, ['glob', 'limit']);
-      return { name: 'list_workspace_files', args: { glob: optionalString(args, 'glob', 500), limit: optionalLimit(args, 'limit', 150) } };
+      assertKeys(args, ['glob', 'limit', 'offset']);
+      return { name: 'list_workspace_files', args: { glob: optionalString(args, 'glob', 500), limit: optionalLimit(args, 'limit', 150), offset: optionalOffset(args, 'offset') } };
     case 'read_file':
-      assertKeys(args, ['path']);
-      return { name: 'read_file', args: { path: requiredString(args, 'path', 1024) } };
+      assertKeys(args, ['path', 'limit', 'offset']);
+      return { name: 'read_file', args: { path: requiredString(args, 'path', 1024), limit: optionalLimit(args, 'limit', 2000), offset: optionalOffset(args, 'offset') } };
     case 'get_active_editor_context':
       assertKeys(args, []);
       return { name: 'get_active_editor_context', args: {} };
     case 'search_workspace':
-      assertKeys(args, ['query', 'glob', 'limit']);
-      return { name: 'search_workspace', args: { query: requiredString(args, 'query', 2000), glob: optionalString(args, 'glob', 500), limit: optionalLimit(args, 'limit', 60) } };
+      assertKeys(args, ['query', 'glob', 'limit', 'offset']);
+      return { name: 'search_workspace', args: { query: requiredString(args, 'query', 2000), glob: optionalString(args, 'glob', 500), limit: optionalLimit(args, 'limit', 60), offset: optionalOffset(args, 'offset') } };
     case 'propose_file_edit': {
-      assertKeys(args, ['path', 'summary', 'edits', 'createContent', 'newText', 'new_text', 'replacement', 'replacementText', 'content']);
+      assertKeys(args, ['path', 'summary', 'edits', 'createContent', 'newText', 'newtext', 'new_text', 'replacement', 'replacementText', 'replacement_text', 'replacement_content', 'replacementContent', 'updatedText', 'updated_text', 'newContent', 'new_content', 'replaceWith', 'replace_with', 'replace', 'afterText', 'after_text', 'after', 'insertText', 'insert_text', 'insert', 'value', 'text', 'content', 'body', 'replacementValue', 'new_value', 'new']);
       const filePath = requiredString(args, 'path', 1024);
       const summary = requiredString(args, 'summary', 2000);
       const rawEdits = args.edits;
@@ -149,7 +159,7 @@ export function validateToolArguments(name: string, value: unknown): ValidatedTo
         if (!rawEdits.length || rawEdits.length > 20) throw new Error('edits must contain between 1 and 20 entries.');
         let totalPatchChars = 0;
         const inheritedReplacement = rawEdits.length === 1
-          ? ['newText', 'new_text', 'replacement', 'replacementText', 'content'].map((key) => args[key]).find((candidate): candidate is string => typeof candidate === 'string')
+          ? ['newText', 'newtext', 'new_text', 'replacement', 'replacementText', 'replacement_text', 'replacement_content', 'replacementContent', 'updatedText', 'updated_text', 'newContent', 'new_content', 'replaceWith', 'replace_with', 'replace', 'afterText', 'after_text', 'after', 'insertText', 'insert_text', 'insert', 'value', 'text', 'content', 'body', 'replacementValue', 'new_value', 'new'].map((key) => args[key]).find((candidate): candidate is string => typeof candidate === 'string')
           : undefined;
         const edits: ValidatedEdit[] = rawEdits.map((item, index) => {
           if (!isRecord(item)) throw new Error(`Edit ${index + 1} must be an object.`);

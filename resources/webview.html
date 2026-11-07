@@ -27,6 +27,20 @@
 /* Focused, single-screen navigation */
 .shell{display:flex;width:100%;height:100vh;overflow:hidden}main.panel{width:100%;height:100%;min-width:0;display:flex;flex-direction:column}.top{gap:10px}.top .brandBlock{flex:1;min-width:0}.top .controls{margin-left:auto}.chatListView{flex:1;overflow:auto;padding:22px 16px}.chatListInner{width:100%;max-width:720px;margin:0 auto}.chatListHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 0 18px}.chatListHead h2{font-size:18px;margin:0 0 4px}.chatListHead p{color:var(--muted);margin:0;font-size:12px}.chatListView input.search{margin:0 0 10px}.chatListView .list{padding:4px 0}.chatListView .chatItem{padding:12px;border:1px solid var(--border);margin-bottom:6px;background:var(--card)}.chatListView .chatItem .actions{opacity:1}.chatAppView{flex:1;min-height:0;display:flex;flex-direction:column}.settings{width:100%;max-width:760px;margin:0 auto;flex:1;min-height:0}.keySettings{display:flex;gap:12px;align-items:center;justify-content:space-between}.keyActions{display:flex;gap:6px;flex-shrink:0}.keyActions .danger{color:var(--error);border-color:var(--error)}.status.working:before{content:'';display:inline-block;width:10px;height:10px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;margin-right:7px;vertical-align:-2px;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.edit-progress{border:1px solid var(--border);border-radius:8px;background:var(--card);padding:9px 10px;display:flex;flex-direction:column;gap:7px}.edit-progress .line{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px}.edit-progress .spinner{width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}.edit-progress.done .spinner{animation:none;border:0;width:14px;height:14px}.progressTrack{height:3px;border-radius:4px;background:var(--border);overflow:hidden}.progressTrack span{display:block;height:100%;width:0;background:var(--accent);transition:width .18s ease}.edit-progress.done .progressTrack span{width:100%;background:var(--vscode-testing-iconPassed)}.preview{align-items:stretch}.previewCol{min-width:0}.previewLabel{font-size:10px;color:var(--muted);margin:0 0 4px}.preview pre{max-height:240px}.approval .desc.path{font-family:var(--vscode-editor-font-family);font-size:11px}.chatItem .actions button{opacity:.8}.chatItem .actions button:hover{opacity:1}.chatItem .sub{margin-top:3px}.feed{scroll-behavior:smooth}.composer{background:var(--bg)}.approvalDock{display:flex;flex-direction:column;gap:6px;max-height:35vh;overflow:auto}.approvalDock:empty{display:none}.approvalDock .approval{padding:8px;border-color:var(--warning)}.approvalDock .preview{display:none}.approval-inline{border-left:2px solid var(--warning);padding:7px 9px;margin:5px 0 10px;background:var(--card);border-radius:0 7px 7px 0}.diffView{font:11px var(--vscode-editor-font-family);white-space:pre;overflow:auto;max-height:260px;background:var(--vscode-textCodeBlock-background);border-radius:5px;padding:7px}.diffLine{display:block;white-space:pre}.diffLine.add{color:var(--vscode-gitDecoration-addedResourceForeground,var(--vscode-testing-iconPassed))}.diffLine.remove{color:var(--vscode-gitDecoration-deletedResourceForeground,var(--error))}.approval-inline .approval-state{font-size:10px;color:var(--muted);margin-top:5px}.loadingState{color:var(--muted);font-size:12px;padding:3px 0}.loadingDots{display:inline-flex;gap:4px;margin-left:7px}.loadingDots i{width:4px;height:4px;background:var(--muted);border-radius:50%;animation:pulse 1s infinite}.loadingDots i:nth-child(2){animation-delay:.15s}.loadingDots i:nth-child(3){animation-delay:.3s}@keyframes pulse{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
 @media(max-width:420px){.chatListView{padding:16px 10px}.chatListHead{align-items:flex-start;flex-direction:column}.chatListHead button{width:100%}.keySettings{align-items:flex-start;flex-direction:column}.keyActions{width:100%}.keyActions button{flex:1}.preview{grid-template-columns:1fr}.top{padding:0 8px}}
+
+/* GitHub-flavoured Markdown tables and block elements */
+.markdownTableWrap{max-width:100%;overflow-x:auto;margin:12px 0;border:1px solid var(--vscode-panel-border);border-radius:8px}
+.markdownTable{border-collapse:collapse;width:100%;font-size:13px;min-width:360px}
+.markdownTable th,.markdownTable td{padding:8px 11px;border-bottom:1px solid var(--vscode-panel-border);border-right:1px solid var(--vscode-panel-border);text-align:left;vertical-align:top}
+.markdownTable th{background:var(--vscode-editor-inactiveSelectionBackground);font-weight:650}
+.markdownTable tr:last-child td{border-bottom:0}
+.markdownTable th:last-child,.markdownTable td:last-child{border-right:0}
+.content hr{border:0;border-top:1px solid var(--vscode-panel-border);margin:14px 0}
+.content img{max-width:100%;height:auto;border-radius:6px}
+.content input[type=checkbox]{vertical-align:middle;margin-right:6px}
+.content blockquote{border-left:3px solid var(--vscode-textBlockQuote-border);margin:8px 0;padding:4px 12px;color:var(--vscode-descriptionForeground);background:var(--vscode-textBlockQuote-background)}
+.content pre{max-width:100%;overflow:auto}
+
 </style></head><body>
 <div class="shell">
 <main class="panel">
@@ -153,28 +167,103 @@ function escapeHtml(value){return String(value).replace(/[&<>\"']/g,ch=>({'&':'&
 function renderInlineMarkdown(value){
   let text=escapeHtml(value);
   const code=[];
-  text=text.replace(/\x60([^\x60]+)\x60/g,(_,part)=>{const token='\uE000'+code.length+'\uE001';code.push('<code>'+part+'</code>');return token});
-  text=text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,(_,label,url)=>'<a href="'+url+'" target="_blank" rel="noopener noreferrer">'+label+'</a>');
-  text=text.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/~~([^~]+)~~/g,'<del>$1</del>').replace(/\*([^*]+)\*/g,'<em>$1</em>');
+  text=text.replace(/`([^`]+)`/g,(_,part)=>{const token='\uE000'+code.length+'\uE001';code.push('<code>'+part+'</code>');return token});
+  const safeUrl=(url)=>/^(https?:\/\/|mailto:)/i.test(url)?url:'#';
+  text=text.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)(?:\s+"([^"]*)")?\)/g,(_,alt,url,title)=>'<img src="'+safeUrl(url)+'" alt="'+alt+'" loading="lazy"'+(title?' title="'+title+'"':'')+'>');
+  text=text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)(?:\s+"([^"]*)")?\)/g,(_,label,url,title)=>'<a href="'+safeUrl(url)+'" target="_blank" rel="noopener noreferrer"'+(title?' title="'+title+'"':'')+'>'+label+'</a>');
+  text=text.replace(/&lt;(https?:\/\/[^&\s]+)&gt;/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+  text=text.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/__(.+?)__/g,'<strong>$1</strong>')
+    .replace(/~~(.+?)~~/g,'<del>$1</del>')
+    .replace(/(^|[^\w])\*([^*\n]+)\*/g,'$1<em>$2</em>')
+    .replace(/(^|[^\w])_([^_\n]+)_/g,'$1<em>$2</em>');
   return text.replace(/\uE000(\d+)\uE001/g,(_,index)=>code[Number(index)]||'');
 }
-function renderMarkdown(source){
-  const lines=String(source||'').replace(/\r\n/g,'\n').split('\n');
-  const html=[];let paragraph=[];let listType='';let listItems=[];let codeLines=null;
-  const flushParagraph=()=>{if(paragraph.length){html.push('<p>'+paragraph.map(renderInlineMarkdown).join('<br>')+'</p>');paragraph=[]}};
-  const flushList=()=>{if(listItems.length){html.push('<'+listType+'>'+listItems.map(item=>'<li>'+renderInlineMarkdown(item)+'</li>').join('')+'</'+listType+'>');listItems=[];listType=''}};
-  for(const line of lines){
-    if(codeLines){if(/^\s*\x60{3}/.test(line)){html.push('<pre><code>'+escapeHtml(codeLines.join('\n'))+'</code></pre>');codeLines=null}else codeLines.push(line);continue}
-    if(/^\s*\x60{3}/.test(line)){flushParagraph();flushList();codeLines=[];continue}
-    const heading=line.match(/^(#{1,4})\s+(.+)$/);const bullet=line.match(/^\s*[-*+]\s+(.+)$/);const ordered=line.match(/^\s*\d+[.)]\s+(.+)$/);
-    if(heading){flushParagraph();flushList();const level=heading[1].length;html.push('<h'+level+'>'+renderInlineMarkdown(heading[2])+'</h'+level+'>');continue}
-    if(bullet||ordered){flushParagraph();const nextType=bullet?'ul':'ol';if(listType&&listType!==nextType)flushList();listType=nextType;listItems.push((bullet||ordered)[1]);continue}
-    if(/^\s*>/.test(line)){flushParagraph();flushList();html.push('<blockquote>'+renderInlineMarkdown(line.replace(/^\s*>\s?/,''))+'</blockquote>');continue}
-    if(!line.trim()){flushParagraph();flushList();continue}
-    flushList();paragraph.push(line);
+function splitMarkdownTableRow(line){
+  let value=line.trim();
+  if(value.startsWith('|'))value=value.slice(1);
+  if(value.endsWith('|'))value=value.slice(0,-1);
+  const cells=[];let current='';let escaped=false;let inCode=false;
+  for(let i=0;i<value.length;i++){
+    const ch=value[i];
+    if(ch==='`'&&!escaped)inCode=!inCode;
+    if(ch==='|'&&!escaped&&!inCode){cells.push(current.trim());current='';continue}
+    current+=ch;
+    if(ch==='\\'&&!escaped)escaped=true;else escaped=false;
   }
-  if(codeLines)html.push('<pre><code>'+escapeHtml(codeLines.join('\n'))+'</code></pre>');
-  flushParagraph();flushList();return html.join('');
+  cells.push(current.trim());
+  return cells;
+}
+function renderMarkdown(source){
+  const lines=String(source||'').replace(/\r\n?/g,'\n').split('\n');
+  const html=[];let i=0;
+  const isTableDivider=(line)=>{const cells=splitMarkdownTableRow(line);return cells.length>0&&cells.every(cell=>/^:?-{3,}:?$/.test(cell))};
+  const renderListBlock=(start,baseIndent)=>{
+    let cursor=start;const first=lines[cursor].match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
+    if(!first)return {html:'',next:cursor};
+    const ordered=/^\d/.test(first[2]),tag=ordered?'ol':'ul',items=[];
+    while(cursor<lines.length){
+      const match=lines[cursor].match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
+      if(!match||match[1].length!==baseIndent||/^\d/.test(match[2])!==ordered)break;
+      const task=match[3].match(/^\[([ xX])\]\s+(.*)$/);
+      let itemHtml=task
+        ? '<input type="checkbox" disabled '+(task[1].toLowerCase()==='x'?'checked':'')+'> '+renderInlineMarkdown(task[2])
+        : renderInlineMarkdown(match[3]);
+      cursor++;
+      const nested=[];
+      while(cursor<lines.length){
+        const child=lines[cursor].match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
+        if(!child||child[1].length<=baseIndent)break;
+        const rendered=renderListBlock(cursor,child[1].length);
+        if(rendered.next===cursor)break;
+        nested.push(rendered.html);cursor=rendered.next;
+      }
+      items.push('<li>'+itemHtml+nested.join('')+'</li>');
+    }
+    return {html:'<'+tag+'>'+items.join('')+'</'+tag+'>',next:cursor};
+  };
+  const isBlockStart=(line,index)=>/^\s*```/.test(line)||/^\s{0,3}#{1,6}\s/.test(line)||/^\s*>/.test(line)||/^\s*(?:[-*_]\s*){3,}$/.test(line)||/^\s*([-*+]|\d+[.)])\s+/.test(line)||(index+1<lines.length&&line.includes('|')&&isTableDivider(lines[index+1]));
+  while(i<lines.length){
+    const line=lines[i];
+    if(!line.trim()){i++;continue}
+    const fence=line.match(/^\s*(```+|~~~+)\s*([^\s`]*)?.*$/);
+    if(fence){
+      const marker=fence[1][0],length=fence[1].length,language=(fence[2]||'').replace(/[^a-zA-Z0-9_+-]/g,'');
+      const code=[];i++;
+      while(i<lines.length&&!new RegExp('^\\s*'+(marker==='`'?'`':'~')+'{'+length+',}\\s*$').test(lines[i])){code.push(lines[i]);i++}
+      if(i<lines.length)i++;
+      html.push('<pre><code'+(language?' class="language-'+language+'"':'')+'>'+escapeHtml(code.join('\n'))+'</code></pre>');continue;
+    }
+    if(i+1<lines.length&&line.includes('|')&&isTableDivider(lines[i+1])){
+      const headers=splitMarkdownTableRow(line),alignments=splitMarkdownTableRow(lines[i+1]).map(cell=>cell.startsWith(':')&&cell.endsWith(':')?'center':cell.endsWith(':')?'right':cell.startsWith(':')?'left':'');
+      i+=2;const rows=[];
+      while(i<lines.length&&lines[i].trim()&&lines[i].includes('|')){rows.push(splitMarkdownTableRow(lines[i]));i++}
+      const head='<thead><tr>'+headers.map((cell,index)=>'<th'+(alignments[index]?' style="text-align:'+alignments[index]+'"':'')+'>'+renderInlineMarkdown(cell)+'</th>').join('')+'</tr></thead>';
+      const body='<tbody>'+rows.map(row=>'<tr>'+headers.map((_,index)=>'<td'+(alignments[index]?' style="text-align:'+alignments[index]+'"':'')+'>'+(row[index]===undefined?'':renderInlineMarkdown(row[index]))+'</td>').join('')+'</tr>').join('')+'</tbody>';
+      html.push('<div class="markdownTableWrap"><table class="markdownTable">'+head+body+'</table></div>');continue;
+    }
+    const heading=line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if(heading){const level=heading[1].length;html.push('<h'+level+'>'+renderInlineMarkdown(heading[2])+'</h'+level+'>');i++;continue}
+    if(/^\s*(?:[-*_]\s*){3,}$/.test(line)){html.push('<hr>');i++;continue}
+    if(/^\s*>/.test(line)){
+      const quote=[];while(i<lines.length&&/^\s*>/.test(lines[i])){quote.push(lines[i].replace(/^\s*>\s?/,''));i++}
+      html.push('<blockquote>'+renderMarkdown(quote.join('\n'))+'</blockquote>');continue;
+    }
+    const listMatch=line.match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
+    if(listMatch){
+      const rendered=renderListBlock(i,listMatch[1].length);
+      html.push(rendered.html);i=rendered.next;continue;
+    }
+    if(i+1<lines.length&&/^\s*(?:=+|-+)\s*$/.test(lines[i+1])){
+      const level=lines[i+1].trim().startsWith('=')?1:2;
+      html.push('<h'+level+'>'+renderInlineMarkdown(line.trim())+'</h'+level+'>');i+=2;continue;
+    }
+    const paragraph=[line];i++;
+    while(i<lines.length&&lines[i].trim()&&!isBlockStart(lines[i],i)){paragraph.push(lines[i]);i++}
+    html.push('<p>'+paragraph.map(renderInlineMarkdown).join('<br>')+'</p>');
+  }
+  return html.join('');
 }
 function appendText(target,text){if(!target)return;currentRaw+=text;target.innerHTML=renderMarkdown(currentRaw);scroll()}
 function addReasoning(text){if(!currentAssistant)return;let box=currentAssistant.querySelector('.expandable.reasoning');if(!box){box=el('details','expandable reasoning');box.append(el('summary',null,'Reasoning / Thinking'),el('pre',null,''));currentAssistant.prepend(box);}box.querySelector('pre').textContent+=text;scroll()}

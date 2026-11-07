@@ -1,5 +1,43 @@
 import type { ChatMessage, ModelResponse, ToolCall } from './config';
 
+type JsonRecord = Record<string, unknown>;
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Merge partial provider tool-argument objects without discarding earlier fields. */
+function mergeToolArgumentValues(previous: unknown, incoming: unknown): unknown {
+  if (Array.isArray(previous) && Array.isArray(incoming)) {
+    const merged = previous.slice();
+    incoming.forEach((value, index) => {
+      merged[index] = index in merged
+        ? mergeToolArgumentValues(merged[index], value)
+        : value;
+    });
+    return merged;
+  }
+  if (isJsonRecord(previous) && isJsonRecord(incoming)) {
+    const merged: JsonRecord = { ...previous };
+    for (const [key, value] of Object.entries(incoming)) {
+      merged[key] = key in merged
+        ? mergeToolArgumentValues(merged[key], value)
+        : value;
+    }
+    return merged;
+  }
+  return incoming;
+}
+
+function parseArgumentObject(value: string): JsonRecord | undefined {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isJsonRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export class ModelClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -134,13 +172,25 @@ export class ModelClient {
           if (callObj.function?.name) existing.function.name += String(callObj.function.name);
           const argumentDelta = callObj.function?.arguments;
           if (typeof argumentDelta === 'string') {
-            existing.function.arguments += argumentDelta;
-          } else if (argumentDelta && typeof argumentDelta === 'object' && !Array.isArray(argumentDelta)) {
-            // A few OpenAI-compatible providers return already-decoded
-            // argument objects instead of the protocol's JSON string.
-            // Preserve the object by serializing it, rather than turning it
-            // into the unusable string "[object Object]".
-            existing.function.arguments = JSON.stringify(argumentDelta);
+            const previousObject = parseArgumentObject(existing.function.arguments);
+            const incomingObject = parseArgumentObject(argumentDelta);
+            if (previousObject && incomingObject) {
+              existing.function.arguments = JSON.stringify(mergeToolArgumentValues(previousObject, incomingObject));
+            } else {
+              // Standard OpenAI streaming sends JSON string fragments. Keep
+              // appending them until the complete argument document exists.
+              existing.function.arguments += argumentDelta;
+            }
+          } else if (isJsonRecord(argumentDelta)) {
+            // Some compatible gateways stream decoded argument objects. They
+            // may send different fields (or partial nested edit objects) in
+            // separate deltas; merge recursively instead of overwriting the
+            // earlier snapshot and silently losing oldText/newText siblings.
+            const previousObject = parseArgumentObject(existing.function.arguments);
+            const merged = previousObject
+              ? mergeToolArgumentValues(previousObject, argumentDelta)
+              : argumentDelta;
+            existing.function.arguments = JSON.stringify(merged);
           }
           toolCalls.set(index, existing);
         }

@@ -43,7 +43,7 @@ describe('tool argument validation', () => {
   it('reports missing or non-string newText separately from size violations', () => {
     expect(() => validateToolArguments('propose_file_edit', {
       path: 'src/a.ts', summary: 'Edit', edits: [{ oldText: 'old', newText: null }],
-    })).toThrow(/newText is missing or newText is not a string/);
+    })).toThrow(/missing replacement text/);
   });
 
 
@@ -59,7 +59,7 @@ describe('tool argument validation', () => {
   it('never converts a missing replacement into an accidental deletion', () => {
     expect(() => validateToolArguments('propose_file_edit', {
       path: 'src/a.ts', summary: 'Edit', edits: [{ oldText: 'before' }],
-    })).toThrow(/will not guess an empty replacement/);
+    })).toThrow(/will not guess replacement code/);
   });
 
   it('accepts an explicitly empty newText for intentional deletion', () => {
@@ -107,4 +107,13 @@ it('does not apply a top-level replacement ambiguously to multiple edits', () =>
     path: 'src/a.ts', summary: 'Edit',
     edits: [{ oldText: 'one' }, { oldText: 'two' }], newText: 'replacement',
   })).toThrow(/missing replacement text/);
+});
+
+it('accepts offset and limit pagination on workspace tools', () => {
+  expect(validateToolArguments('list_workspace_files', { limit: 25, offset: 50 }).args)
+    .toMatchObject({ limit: 25, offset: 50 });
+  expect(validateToolArguments('read_file', { path: 'src/a.ts', limit: 100, offset: 200 }).args)
+    .toMatchObject({ path: 'src/a.ts', limit: 100, offset: 200 });
+  expect(validateToolArguments('search_workspace', { query: 'export', limit: 20, offset: 40 }).args)
+    .toMatchObject({ query: 'export', limit: 20, offset: 40 });
 });

@@ -56,23 +56,31 @@ function findUnique(source: string, anchor: string): { start: number; end: numbe
 
 /** Decode a model's accidentally double-escaped source snippet, e.g. \"src\" -> "src". */
 function decodeEscapedAnchor(value: string): string | undefined {
-  if (!value.includes('\\"') && !(value.startsWith('"') && value.endsWith('"'))) return undefined;
+  const candidates = new Set<string>();
   let current = value;
-  let changed = false;
-  for (let depth = 0; depth < 2; depth++) {
-    try {
-      const decoded: unknown = current.startsWith('"') && current.endsWith('"')
-        ? JSON.parse(current)
-        : JSON.parse(`"${current}"`);
-      if (typeof decoded !== 'string' || decoded === current) break;
-      current = decoded;
-      changed = true;
-      if (!current.includes('\\"')) break;
-    } catch {
-      break;
+  for (let depth = 0; depth < 4; depth++) {
+    let next = current
+      .replace(/\\+"/g, '"')
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\\\/g, '\\');
+    if (next === current) {
+      try {
+        const wrapped = JSON.parse(`"${current.replace(/"/g, '\\"')}"`);
+        if (typeof wrapped === 'string') next = wrapped;
+      } catch {
+        // Not a complete JSON string fragment; try the explicit escape rules above.
+      }
     }
+    if (next === current) break;
+    candidates.add(next);
+    current = next;
   }
-  return changed && current !== value ? current : undefined;
+  for (const candidate of candidates) {
+    if (candidate !== value && candidate.trim()) return candidate;
+  }
+  return undefined;
 }
 
 function lineRecords(value: string): Array<{ text: string; start: number; end: number }> {

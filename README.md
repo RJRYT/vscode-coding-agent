@@ -1,3 +1,7 @@
+## Latest update — v0.2.22
+
+Fixes workspace tool pagination argument mismatches, merges partial streamed tool-argument objects without losing edit fields, improves escaped-anchor recovery and replacement alias normalization, and adds rich Markdown rendering including tables, nested lists, and task lists.
+
 # Nemotron Coding Agent for VS Code
 
 A VS Code workspace coding agent powered by NVIDIA Nemotron 3.5 Super VL 120B A12B. It can inspect your project, search code, prepare targeted patches, and run approved checks.

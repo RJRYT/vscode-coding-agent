@@ -9,13 +9,13 @@ export class ToolDispatcher {
     const call = validateToolArguments(name, rawArgs);
     switch (call.name) {
       case 'list_workspace_files':
-        return this.registry.listFiles(call.args.glob, call.args.limit);
+        return this.registry.listFiles(call.args.glob, call.args.limit, call.args.offset);
       case 'read_file':
-        return this.registry.readFile(call.args.path);
+        return this.registry.readFile(call.args.path, call.args.limit, call.args.offset);
       case 'get_active_editor_context':
         return this.registry.getActiveEditorContext();
       case 'search_workspace':
-        return this.registry.searchWorkspace(call.args.query, call.args.glob, call.args.limit);
+        return this.registry.searchWorkspace(call.args.query, call.args.glob, call.args.limit, call.args.offset);
       case 'propose_file_edit':
         return 'edits' in call.args
           ? this.registry.proposeFileEdit(call.args.path, call.args.edits, undefined, call.args.summary, signal)

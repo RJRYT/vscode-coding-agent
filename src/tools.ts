@@ -74,6 +74,7 @@ export class ToolRegistry {
             properties: {
               glob: { type: 'string', description: 'Optional glob pattern; defaults to **/*.' },
               limit: { type: 'integer', description: 'Maximum number of paths (max 150).' },
+              offset: { type: 'integer', description: 'Optional zero-based pagination offset.' },
             },
             required: [],
           },
@@ -87,7 +88,7 @@ export class ToolRegistry {
             'Read a UTF-8 text file from the workspace. Paths must be relative to the workspace root.',
           parameters: {
             type: 'object',
-            properties: { path: { type: 'string' } },
+            properties: { path: { type: 'string' }, limit: { type: 'integer', description: 'Optional maximum number of lines to return (1-2000).' }, offset: { type: 'integer', description: 'Optional zero-based starting line offset.' } },
             required: ['path'],
           },
         },
@@ -113,6 +114,7 @@ export class ToolRegistry {
               query: { type: 'string' },
               glob: { type: 'string', description: 'Optional file glob, for example **/*.{ts,x}.' },
               limit: { type: 'integer' },
+              offset: { type: 'integer', description: 'Optional zero-based pagination offset.' },
             },
             required: ['query'],
           },
@@ -123,17 +125,40 @@ export class ToolRegistry {
         function: {
           name: 'propose_file_edit',
           description:
-            'Propose an edit to an existing workspace file using exact text anchors. Read the latest file first. Each oldText must match exactly once; it may be a focused section or the complete current file snapshot for a deliberate full-file rewrite. Large edits are supported up to 50 million characters per field, subject to a 50 million character combined request budget. To create a new file only, use createContent.',
+            'Propose an edit to an existing workspace file using exact text anchors. Read the latest file first. Each edit must contain oldText AND replacement text (prefer newText). Copy literal source text from read_file; never send JSON-escaped source quotes. It may be a focused section or the complete current file snapshot for a deliberate full-file rewrite. Large edits are supported up to 50 million characters per field, subject to a 50 million character combined request budget. To create a new file only, use createContent.',
           parameters: {
             type: 'object',
             properties: {
               path: { type: 'string', description: 'Workspace-relative path.' },
               summary: { type: 'string', description: 'Short explanation of the change.' },
-              newText: { type: 'string', description: 'Compatibility fallback for a single edit only. Prefer placing newText inside edits[0].' },
+              newText: { type: 'string', description: 'For a single edit, compatibility replacement fallback. Prefer edits[0].newText.' },
+              newtext: { type: 'string' },
               new_text: { type: 'string' },
               replacement: { type: 'string' },
               replacementText: { type: 'string' },
+              replacement_text: { type: 'string' },
+              replacement_content: { type: 'string' },
+              replacementContent: { type: 'string' },
+              updatedText: { type: 'string' },
+              updated_text: { type: 'string' },
+              newContent: { type: 'string' },
+              new_content: { type: 'string' },
+              replaceWith: { type: 'string' },
+              replace_with: { type: 'string' },
+              replace: { type: 'string' },
+              afterText: { type: 'string' },
+              after_text: { type: 'string' },
+              after: { type: 'string' },
+              insertText: { type: 'string' },
+              insert_text: { type: 'string' },
+              insert: { type: 'string' },
+              value: { type: 'string' },
+              text: { type: 'string' },
               content: { type: 'string' },
+              body: { type: 'string' },
+              replacementValue: { type: 'string' },
+              new_value: { type: 'string' },
+              new: { type: 'string' },
               edits: {
                 type: 'array',
                 minItems: 1,
@@ -142,19 +167,22 @@ export class ToolRegistry {
                 items: {
                   type: 'object',
                   properties: {
-                    oldText: { type: 'string', description: 'Exact existing snippet including enough surrounding context to occur exactly once. Large snippets are supported.' },
-                    newText: { type: 'string', description: 'Canonical replacement field. Always provide this field. An empty string intentionally deletes the matched oldText. Preserve unrelated content unless intentionally rewriting the full file.' },
-                    replacement: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
-                    replacementText: { type: 'string' },
-                    replacement_text: { type: 'string' },
-                    new_text: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
-                    new_content: { type: 'string' },
-                    updatedText: { type: 'string' },
-                    replaceWith: { type: 'string' },
-                    after: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
-                    afterText: { type: 'string' },
-                    insertText: { type: 'string' },
-                    content: { type: 'string', description: 'Compatibility alias for newText; prefer newText.' },
+                    oldText: { type: 'string', description: 'Exact source text copied from read_file. Do not JSON-escape source quotes.' },
+                    oldtext: { type: 'string' }, old_text: { type: 'string' },
+                    originalText: { type: 'string' }, original_text: { type: 'string' },
+                    original: { type: 'string' }, search: { type: 'string' }, find: { type: 'string' },
+                    old_content: { type: 'string' }, old_code: { type: 'string' }, before: { type: 'string' }, old: { type: 'string' },
+                    newText: { type: 'string', description: 'Required replacement source. Use an empty string only for intentional deletion.' },
+                    newtext: { type: 'string' }, new_text: { type: 'string' },
+                    replacement: { type: 'string' }, replacementText: { type: 'string' }, replacement_text: { type: 'string' },
+                    replacement_content: { type: 'string' }, replacementContent: { type: 'string' },
+                    updatedText: { type: 'string' }, updated_text: { type: 'string' },
+                    newContent: { type: 'string' }, new_content: { type: 'string' },
+                    replaceWith: { type: 'string' }, replace_with: { type: 'string' }, replace: { type: 'string' },
+                    afterText: { type: 'string' }, after_text: { type: 'string' }, after: { type: 'string' },
+                    insertText: { type: 'string' }, insert_text: { type: 'string' }, insert: { type: 'string' },
+                    value: { type: 'string' }, text: { type: 'string' }, content: { type: 'string' }, body: { type: 'string' },
+                    replacementValue: { type: 'string' }, new_value: { type: 'string' }, new: { type: 'string' },
                   },
                   required: ['oldText', 'newText'],
                 },
@@ -181,18 +209,20 @@ export class ToolRegistry {
     ];
   }
 
-  async listFiles(glob?: string, rawLimit?: number): Promise<ToolResult> {
+  async listFiles(glob?: string, rawLimit?: number, rawOffset?: number): Promise<ToolResult> {
     const pattern = typeof glob === 'string' && glob.trim() ? glob : '**/*';
     const limit = Math.min(Math.max(Number(rawLimit) || 100, 1), 150);
-    const files = await vscode.workspace.findFiles(pattern, EXCLUDES, limit);
+    const offset = Math.max(0, Math.min(Number(rawOffset) || 0, 100_000));
+    const files = await vscode.workspace.findFiles(pattern, EXCLUDES, Math.min(10_000, limit + offset + 1));
+    const page = files.slice(offset, offset + limit);
     return {
-      content: files.length
-        ? files.map((uri: vscode.Uri) => vscode.workspace.asRelativePath(uri, false)).join('\n')
-        : 'No files matched.',
+      content: page.length
+        ? `${page.map((uri: vscode.Uri) => vscode.workspace.asRelativePath(uri, false)).join('\n')}\n\n[Showing ${offset + 1}-${offset + page.length}${files.length > offset + page.length ? ' of more' : ''}; use offset for the next page.]`
+        : 'No files matched at this offset.',
     };
   }
 
-  async readFile(relativePath: string): Promise<ToolResult> {
+  async readFile(relativePath: string, rawLimit?: number, rawOffset?: number): Promise<ToolResult> {
     if (isSensitivePath(relativePath)) {
       throw new Error('Reading environment files, private keys, and secret files is blocked.');
     }
@@ -253,7 +283,12 @@ export class ToolRegistry {
       throw new Error('File is larger than 50 MB. Use workspace search to inspect a relevant section.');
     }
     if (text.includes('\0')) throw new Error('This appears to be a binary file. Binary file reading is not supported yet.');
-    return { content: `--- ${relativePath} ---\nSnapshot source: ${sourceLabel}\nCaptured: ${new Date().toISOString()}\n\n${text}` };
+    const allLines = text.split(/\r?\n/);
+    const offset = Math.max(0, Math.min(Number(rawOffset) || 0, Math.max(0, allLines.length - 1)));
+    const limit = rawLimit === undefined ? allLines.length : Math.max(1, Math.min(Number(rawLimit) || 2000, 2000));
+    const selectedLines = allLines.slice(offset, offset + limit);
+    const paginated = offset > 0 || selectedLines.length < allLines.length;
+    return { content: `--- ${relativePath} ---\nSnapshot source: ${sourceLabel}\nCaptured: ${new Date().toISOString()}\nLines: ${offset + 1}-${offset + selectedLines.length} of ${allLines.length}${paginated ? ' (partial snapshot; request another range for more lines)' : ' (complete snapshot)'}\n\n${selectedLines.join('\n')}` };
   }
 
   getActiveEditorContext(): ToolResult {
@@ -281,11 +316,12 @@ export class ToolRegistry {
     };
   }
 
-  async searchWorkspace(query: string, glob?: string, rawLimit?: number): Promise<ToolResult> {
+  async searchWorkspace(query: string, glob?: string, rawLimit?: number, rawOffset?: number): Promise<ToolResult> {
     const needle = query?.trim();
     if (!needle) throw new Error('Search query is empty.');
 
     const limit = Math.min(Math.max(Number(rawLimit) || 30, 1), MAX_SEARCH_RESULT_LIMIT);
+    const offset = Math.max(0, Math.min(Number(rawOffset) || 0, 100_000));
     const include = glob?.trim() ? glob : '**/*';
     const files = await vscode.workspace.findFiles(include, EXCLUDES, MAX_SEARCH_FILES);
     const results: string[] = [];
@@ -296,7 +332,7 @@ export class ToolRegistry {
     let skippedLargeFiles = 0;
 
     for (const uri of files) {
-      if (results.length >= limit || scannedBytes >= MAX_SEARCH_TOTAL_BYTES) break;
+      if (results.length >= offset + limit || scannedBytes >= MAX_SEARCH_TOTAL_BYTES) break;
 
       const relativePath = vscode.workspace.asRelativePath(uri, false);
       if (isSensitivePath(relativePath)) continue;
@@ -318,7 +354,7 @@ export class ToolRegistry {
 
         const contents = Buffer.from(bytes).toString('utf8');
         const lines = contents.split(/\r?\n/);
-        for (let index = 0; index < lines.length && results.length < limit; index++) {
+        for (let index = 0; index < lines.length && results.length < offset + limit; index++) {
           const line = lines[index];
           if (line.toLocaleLowerCase().includes(normalizedNeedle)) {
             results.push(`${relativePath}:${index + 1}: ${line.trim().slice(0, 260)}`);
@@ -329,7 +365,8 @@ export class ToolRegistry {
       }
     }
 
-    if (!results.length) {
+    const pageResults = results.slice(offset, offset + limit);
+    if (!pageResults.length) {
       const note =
         files.length >= MAX_SEARCH_FILES || scannedBytes >= MAX_SEARCH_TOTAL_BYTES
           ? ` Search was bounded to ${scannedFiles} readable files / ${Math.round(scannedBytes / (1024 * 1024))} MB.`
@@ -338,12 +375,12 @@ export class ToolRegistry {
     }
 
     const notes: string[] = [];
-    if (results.length >= limit) notes.push(`Result limit: ${limit}.`);
+    if (results.length >= offset + limit) notes.push(`Result page: ${offset + 1}-${offset + pageResults.length}; use offset for the next page.`);
     if (files.length >= MAX_SEARCH_FILES) notes.push('File scan capped at 2,500 files.');
     if (scannedBytes >= MAX_SEARCH_TOTAL_BYTES) notes.push('Read budget capped at 20 MB.');
     if (skippedLargeFiles) notes.push(`${skippedLargeFiles} large files skipped.`);
     return {
-      content: notes.length ? `${results.join('\n')}\n\n[${notes.join(' ')}]` : results.join('\n'),
+      content: notes.length ? `${pageResults.join('\n')}\n\n[${notes.join(' ')}]` : pageResults.join('\n'),
     };
   }
 
