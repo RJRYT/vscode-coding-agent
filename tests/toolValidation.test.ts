@@ -30,6 +30,22 @@ describe('tool argument validation', () => {
     expect(result.name).toBe('propose_file_edit');
   });
 
+
+  it('accepts newText larger than the obsolete 5 million character cap', () => {
+    const newText = 'z'.repeat(5_000_001);
+    const result = validateToolArguments('propose_file_edit', {
+      path: 'src/large.ts', summary: 'Replace a large generated section',
+      edits: [{ oldText: 'UNIQUE_OLD_ANCHOR', newText }],
+    });
+    expect(result.name).toBe('propose_file_edit');
+  });
+
+  it('reports missing or non-string newText separately from size violations', () => {
+    expect(() => validateToolArguments('propose_file_edit', {
+      path: 'src/a.ts', summary: 'Edit', edits: [{ oldText: 'old', newText: null }],
+    })).toThrow(/newText is missing or newText is not a string/);
+  });
+
   it('accepts shell operators and longer approved commands', () => {
     const command = 'npm test && npm run lint 2>&1 | tee verification.log';
     expect(validateToolArguments('run_terminal_command', { command, reason: 'Verify the project' }).name)

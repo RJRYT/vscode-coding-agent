@@ -11,9 +11,9 @@ export const MAX_TOOL_ROUNDS_DEFAULT = 100;
 export const EXCLUDES =
   '**/{node_modules,.git,dist,build,out,.next,coverage,vendor}/**,**/.env*,**/*.{pem,key,p12,pfx}';
 
-export const MAX_FILE_READ_BYTES = 2 * 1024 * 1024;
-export const MAX_FILE_EDIT_BYTES = 10 * 1024 * 1024;
-export const MAX_FILE_REPLACE_BYTES = 10 * 1024 * 1024;
+export const MAX_FILE_READ_BYTES = 50 * 1024 * 1024;
+export const MAX_FILE_EDIT_BYTES = 50 * 1024 * 1024;
+export const MAX_FILE_REPLACE_BYTES = 50 * 1024 * 1024;
 export const MAX_SEARCH_FILE_BYTES = 512 * 1024;
 export const MAX_SEARCH_TOTAL_BYTES = 20 * 1024 * 1024;
 export const MAX_SEARCH_FILES = 2500;

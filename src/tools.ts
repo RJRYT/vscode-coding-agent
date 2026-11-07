@@ -123,7 +123,7 @@ export class ToolRegistry {
         function: {
           name: 'propose_file_edit',
           description:
-            'Propose an edit to an existing workspace file using exact text anchors. Read the latest file first. Each oldText must match exactly once; it may be a focused section or the complete current file snapshot for a deliberate full-file rewrite. Large edits are supported up to 5 million characters per anchor. To create a new file only, use createContent.',
+            'Propose an edit to an existing workspace file using exact text anchors. Read the latest file first. Each oldText must match exactly once; it may be a focused section or the complete current file snapshot for a deliberate full-file rewrite. Large edits are supported up to 50 million characters per field, subject to a 50 million character combined request budget. To create a new file only, use createContent.',
           parameters: {
             type: 'object',
             properties: {
@@ -137,13 +137,13 @@ export class ToolRegistry {
                 items: {
                   type: 'object',
                   properties: {
-                    oldText: { type: 'string', maxLength: 5000000, description: 'Exact existing snippet including enough surrounding context to occur exactly once; up to 5 million characters.' },
-                    newText: { type: 'string', maxLength: 5000000, description: 'Replacement text. May be large (up to 5 million characters); preserve unrelated content unless intentionally rewriting the full file.' },
+                    oldText: { type: 'string', description: 'Exact existing snippet including enough surrounding context to occur exactly once. Large snippets are supported.' },
+                    newText: { type: 'string', description: 'Replacement text. May be large; an empty string deletes the matched oldText. Preserve unrelated content unless intentionally rewriting the full file.' },
                   },
                   required: ['oldText', 'newText'],
                 },
               },
-              createContent: { type: 'string', maxLength: 10000000, description: 'Complete content for a brand-new file only. Existing files must use edits with exact oldText anchors; up to 10 million characters.' },
+              createContent: { type: 'string', description: 'Complete content for a brand-new file only. Existing files must use edits with exact oldText anchors.' },
             },
             required: ['path', 'summary'],
           },
@@ -187,7 +187,7 @@ export class ToolRegistry {
     const bytes = await vscode.workspace.fs.readFile(uri);
     if (bytes.byteLength > MAX_FILE_READ_BYTES) {
       throw new Error(
-        'File is larger than 2 MB. Inspect a relevant section in the editor or use workspace search to narrow the content.'
+        'File is larger than 50 MB. Use editor context or workspace search to inspect a relevant section.'
       );
     }
     if (bytes.includes(0)) {
@@ -325,7 +325,7 @@ export class ToolRegistry {
         throw new Error('A new file must use createContent; targeted edits are only for existing files.');
       }
       if (createContent.length > MAX_CREATE_CONTENT_CHARS || Buffer.byteLength(createContent, 'utf8') > MAX_FILE_EDIT_BYTES || createContent.includes('\0')) {
-        throw new Error('New file content exceeds the 10 MB limit or contains binary data.');
+        throw new Error('New file content exceeds the 50 MB limit or contains binary data.');
       }
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const approved = await this.requestApproval({
@@ -397,13 +397,13 @@ export class ToolRegistry {
     const originalDiskBytes = Buffer.from(await vscode.workspace.fs.readFile(uri));
     const originalVersion = document.version;
     if (Buffer.byteLength(originalText, 'utf8') > MAX_FILE_REPLACE_BYTES) {
-      throw new Error('Refusing to edit a file larger than 10 MB.');
+      throw new Error('Refusing to edit a file larger than 50 MB.');
     }
     if (originalText.includes('\0')) throw new Error('Refusing to edit a binary file.');
 
     const patchResult = applyExactTextPatches(originalText, edits);
     if (Buffer.byteLength(patchResult.text, 'utf8') > MAX_FILE_EDIT_BYTES) {
-      throw new Error('The resulting file would exceed the 10 MB edit limit. Split the change into smaller files.');
+      throw new Error('The resulting file would exceed the 50 MB edit limit. Split the change into smaller files.');
     }
     const preview = createPatchPreview(patchResult.patches);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

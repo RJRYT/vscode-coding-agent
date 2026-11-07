@@ -54,6 +54,15 @@ describe('applyExactTextPatches', () => {
     expect(result.text).toContain('header\nupdated focused section\nfooter');
   });
 
+
+  it('applies replacement text larger than the obsolete 5 million character cap', () => {
+    const replacement = 'z'.repeat(5_000_001);
+    const result = applyExactTextPatches('before UNIQUE_ANCHOR after', [
+      { oldText: 'UNIQUE_ANCHOR', newText: replacement },
+    ]);
+    expect(result.text).toBe(`before ${replacement} after`);
+  });
+
   it('shows only the targeted hunks in the approval preview', () => {
     const result = applyExactTextPatches('top\nconst a = 1;\nbottom', [
       { oldText: 'const a = 1;', newText: 'const a = 2;' },

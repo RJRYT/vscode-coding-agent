@@ -1,4 +1,4 @@
-import { MAX_PATCH_TEXT_CHARS, MAX_CREATE_CONTENT_CHARS, MAX_COMMAND_LENGTH } from './limits';
+import { MAX_PATCH_TEXT_CHARS, MAX_PATCH_TOTAL_CHARS, MAX_CREATE_CONTENT_CHARS, MAX_COMMAND_LENGTH } from './limits';
 
 export type ToolName =
   | 'list_workspace_files'
@@ -98,19 +98,28 @@ export function validateToolArguments(name: string, value: unknown): ValidatedTo
       if (hasEdits === hasCreate) throw new Error('Provide exactly one of edits (existing file) or createContent (new file).');
       if (hasEdits) {
         if (!rawEdits.length || rawEdits.length > 20) throw new Error('edits must contain between 1 and 20 entries.');
+        let totalPatchChars = 0;
         const edits: ValidatedEdit[] = rawEdits.map((item, index) => {
           if (!isRecord(item)) throw new Error(`Edit ${index + 1} must be an object.`);
           assertKeys(item, ['oldText', 'newText']);
           const oldText = requiredString(item, 'oldText', MAX_PATCH_TEXT_CHARS);
           const newText = item.newText;
-          if (typeof newText !== 'string' || newText.length > MAX_PATCH_TEXT_CHARS) {
-            throw new Error(`Edit ${index + 1} has invalid newText (maximum ${MAX_PATCH_TEXT_CHARS.toLocaleString()} characters).`);
+          if (typeof newText !== 'string') {
+            throw new Error(`Edit ${index + 1} is missing newText or newText is not a string (received ${newText === null ? 'null' : typeof newText}).`);
+          }
+          if (newText.length > MAX_PATCH_TEXT_CHARS) {
+            throw new Error(`Edit ${index + 1} newText is ${newText.length.toLocaleString()} characters; the per-edit maximum is ${MAX_PATCH_TEXT_CHARS.toLocaleString()}.`);
+          }
+          totalPatchChars += oldText.length + newText.length;
+          if (totalPatchChars > MAX_PATCH_TOTAL_CHARS) {
+            throw new Error(`The combined oldText/newText payload is ${totalPatchChars.toLocaleString()} characters; the request maximum is ${MAX_PATCH_TOTAL_CHARS.toLocaleString()}. Split the file changes into separate tool calls.`);
           }
           return { oldText, newText };
         });
         return { name: 'propose_file_edit', args: { path: filePath, summary, edits } };
       }
-      if (typeof rawContent !== 'string' || rawContent.length > MAX_CREATE_CONTENT_CHARS) throw new Error(`createContent exceeds ${MAX_CREATE_CONTENT_CHARS.toLocaleString()} characters or is missing.`);
+      if (typeof rawContent !== 'string') throw new Error('createContent is missing or is not a string.');
+      if (rawContent.length > MAX_CREATE_CONTENT_CHARS) throw new Error(`createContent is ${rawContent.length.toLocaleString()} characters; the maximum is ${MAX_CREATE_CONTENT_CHARS.toLocaleString()}.`);
       return { name: 'propose_file_edit', args: { path: filePath, summary, createContent: rawContent } };
     }
     case 'run_terminal_command':

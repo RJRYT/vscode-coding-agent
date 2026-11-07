@@ -1,3 +1,4 @@
+import { MAX_PATCH_TEXT_CHARS, MAX_PATCH_TOTAL_CHARS } from './limits';
 export interface TextPatch {
   oldText: string;
   newText: string;
@@ -26,6 +27,7 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
   }
 
   const resolved: ResolvedTextPatch[] = [];
+  let totalPatchChars = 0;
   for (let index = 0; index < changes.length; index++) {
     const change = changes[index];
     if (
@@ -42,8 +44,12 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
     if (change.oldText.includes('\0') || change.newText.includes('\0')) {
       throw new Error(`Edit ${index + 1} contains a null byte.`);
     }
-    if (change.oldText.length > 5_000_000 || change.newText.length > 5_000_000) {
-      throw new Error(`Edit ${index + 1} exceeds the 5 MB text limit. Split the change into smaller edits if necessary.`);
+    if (change.oldText.length > MAX_PATCH_TEXT_CHARS || change.newText.length > MAX_PATCH_TEXT_CHARS) {
+      throw new Error(`Edit ${index + 1} exceeds the ${MAX_PATCH_TEXT_CHARS.toLocaleString()}-character per-field limit.`);
+    }
+    totalPatchChars += change.oldText.length + change.newText.length;
+    if (totalPatchChars > MAX_PATCH_TOTAL_CHARS) {
+      throw new Error(`Combined patch payload exceeds ${MAX_PATCH_TOTAL_CHARS.toLocaleString()} characters. Split the changes into separate tool calls.`);
     }
     // An exact full-snapshot replacement is safe: it is still anchored to the
     // complete current contents and the caller revalidates the snapshot after approval.

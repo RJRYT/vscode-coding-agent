@@ -136,6 +136,15 @@ This release extracts the webview and engineering prompt into runtime resources,
 
 - Removed the separate hard cap on individual tool calls. The configurable model tool-round setting remains available (default 100, maximum 200).
 - Terminal commands now support shell chaining, pipes, redirection, command substitution, multiline scripts, and normal project commands. Every command still requires explicit approval and a trusted VS Code workspace. Commands run with the current user's OS permissions and are not sandboxed.
-- Increased file read limit to 2 MB, per-edit anchor/replacement limit to 5 million characters, and resulting file limit to 10 MB.
+- Increased file read, edit, and resulting-file limits to 50 MB; patch fields support up to 50 million characters with an aggregate patch payload budget.
 - Exact full-file snapshot replacements are now allowed when `oldText` exactly matches the current file; the approval and stale-snapshot checks still apply.
 - Increased terminal command length to 20,000 characters, no automatic command timeout (the user can stop the active request), and output buffer to 10 MB.
+
+
+## v0.2.18 large file-edit payload fix
+
+- Removed `maxLength` from the `oldText`, `newText`, and `createContent` tool JSON schema fields. Provider-side tool-schema validation no longer enforces the obsolete 5-million-character cap.
+- Runtime validation now accepts up to 50 million characters per patch field and 50 million characters combined across one patch request.
+- File read, edit, and resulting-file byte limits are aligned at 50 MB.
+- `newText` validation now distinguishes a missing/non-string value from an oversized string and reports the actual received character count. Empty `newText` remains valid for deleting an exact matched anchor.
+- Added regression coverage for a replacement larger than 5 million characters.
