@@ -11,6 +11,8 @@ const STORAGE_KEY = 'nemotronAgent.chats';
 
 export class ChatStore {
   private readonly context: vscode.ExtensionContext;
+  private readonly cache = new Map<string, ChatData[]>();
+  private readonly writes = new Map<string, Promise<void>>();
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
@@ -27,17 +29,34 @@ export class ChatStore {
     return folders[0].uri.toString();
   }
 
+  private readChats(workspaceId: string): ChatData[] {
+    const cached = this.cache.get(workspaceId);
+    if (cached) return cached;
+    const loaded = this.context.workspaceState.get<ChatData[]>(this.getChatsKey(workspaceId), []);
+    this.cache.set(workspaceId, loaded);
+    return loaded;
+  }
+
+  private persistChats(workspaceId: string, chats: ChatData[]): void {
+    const key = this.getChatsKey(workspaceId);
+    const snapshot = chats.map((chat) => ({ ...chat, messages: [...chat.messages] }));
+    const previous = this.writes.get(key) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(() => this.context.workspaceState.update(key, snapshot));
+    this.writes.set(key, next);
+    void next.catch(() => this.writes.delete(key));
+  }
+
   listChats(): ChatSummary[] {
     const workspaceId = this.getWorkspaceId();
     if (!workspaceId) return [];
-    const raw = this.context.workspaceState.get<ChatData[]>(this.getChatsKey(workspaceId), []);
+    const raw = this.readChats(workspaceId);
     return raw
       .map((c) => ({
         id: c.id,
         title: c.title,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
-        messageCount: c.messages.length,
+        messageCount: c.messages.filter((message) => message.role === 'user' || message.role === 'assistant').length,
         preview: c.messages
           .filter((m) => m.role === 'user' || m.role === 'assistant')
           .map((m) => m.content ?? '')
@@ -50,14 +69,14 @@ export class ChatStore {
   getChat(id: string): ChatData | undefined {
     const workspaceId = this.getWorkspaceId();
     if (!workspaceId) return undefined;
-    const chats = this.context.workspaceState.get<ChatData[]>(this.getChatsKey(workspaceId), []);
+    const chats = this.readChats(workspaceId);
     return chats.find((c) => c.id === id);
   }
 
   saveChat(chat: ChatData): void {
     const workspaceId = this.getWorkspaceId();
     if (!workspaceId) return;
-    const chats = this.context.workspaceState.get<ChatData[]>(this.getChatsKey(workspaceId), []);
+    const chats = this.readChats(workspaceId);
     const existing = chats.findIndex((c) => c.id === chat.id);
     if (existing >= 0) {
       chats[existing] = chat;
@@ -67,16 +86,17 @@ export class ChatStore {
         chats.length = MAX_CHATS;
       }
     }
-    void this.context.workspaceState.update(this.getChatsKey(workspaceId), chats);
+    this.persistChats(workspaceId, chats);
   }
 
   deleteChat(id: string): void {
     const workspaceId = this.getWorkspaceId();
     if (!workspaceId) return;
-    const chats = this.context.workspaceState.get<ChatData[]>(this.getChatsKey(workspaceId), []);
+    const chats = this.readChats(workspaceId);
     const filtered = chats.filter((c) => c.id !== id);
     if (filtered.length !== chats.length) {
-      void this.context.workspaceState.update(this.getChatsKey(workspaceId), filtered);
+      this.cache.set(workspaceId, filtered);
+      this.persistChats(workspaceId, filtered);
     }
   }
 

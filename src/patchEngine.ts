@@ -42,14 +42,11 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
     if (change.oldText.includes('\0') || change.newText.includes('\0')) {
       throw new Error(`Edit ${index + 1} contains a null byte.`);
     }
-    if (change.oldText.length > 30_000 || change.newText.length > 30_000) {
+    if (change.oldText.length > 100_000 || change.newText.length > 100_000) {
       throw new Error(`Edit ${index + 1} is too large. Split it into smaller targeted edits.`);
     }
-    if (change.oldText === source || (source.length >= 1_000 && change.oldText.length > source.length * 0.65)) {
-      throw new Error('Broad file replacement is blocked. Use a smaller, unique code section as the edit anchor.');
-    }
-    if (source.length >= 1_000 && change.newText.length > source.length * 0.65) {
-      throw new Error('The replacement is too broad for a targeted edit. Split it into smaller focused changes.');
+    if (change.oldText === source) {
+      throw new Error('Full-file replacement is blocked. Use one or more focused exact-match anchors, even when changing a large component.');
     }
 
     const start = source.indexOf(change.oldText);

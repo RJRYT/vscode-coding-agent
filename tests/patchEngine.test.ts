@@ -42,6 +42,13 @@ describe('applyExactTextPatches', () => {
     ).toThrow(/replacement is blocked/);
   });
 
+  it('allows a large focused replacement when it is not the entire file', () => {
+    const anchor = 'x'.repeat(1800) + 'UNIQUE-ANCHOR';
+    const source = 'header\n' + anchor + '\nfooter';
+    const result = applyExactTextPatches(source, [{ oldText: anchor, newText: 'updated focused section' }]);
+    expect(result.text).toContain('header\nupdated focused section\nfooter');
+  });
+
   it('shows only the targeted hunks in the approval preview', () => {
     const result = applyExactTextPatches('top\nconst a = 1;\nbottom', [
       { oldText: 'const a = 1;', newText: 'const a = 2;' },

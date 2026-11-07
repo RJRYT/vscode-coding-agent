@@ -27,7 +27,9 @@ export function isSensitivePath(relativePath: string): boolean {
     name.endsWith('.p12') ||
     name.endsWith('.pfx') ||
     name.endsWith('.p8') ||
-    name.includes('secret')
+    name === 'secrets.json' ||
+    name === '.secrets' ||
+    name === 'credentials.json'
   );
 }
 
@@ -84,36 +86,22 @@ export async function assertPathInsideWorkspace(
   }
 }
 
-const ALLOWED_COMMANDS = [
-  'npm',
-  'npx',
-  'node',
-  'tsc',
-  'eslint',
-  'prettier',
-  'vitest',
-  'jest',
-  'git',
+const ALLOWED_COMMANDS = new Set([
+  'npm', 'npx', 'pnpm', 'yarn', 'node', 'tsc', 'eslint', 'prettier', 'vitest', 'jest', 'git',
+  'ls', 'dir', 'pwd', 'whoami', 'which', 'where', 'find', 'tree', 'grep', 'rg', 'head', 'tail', 'wc', 'sort', 'uniq', 'cat', 'type', 'more', 'less', 'python', 'python3', 'get-childitem', 'get-location', 'select-string', 'test-path', 'get-item', 'get-content',
+]);
+
+const BLOCKED_COMMAND_PATTERNS = [
+  /(^|\s)(rm|rmdir|del|erase|format|shutdown|reboot|mkfs)(\s|$)/i,
+  /(^|\s)(npm|pnpm|yarn)\s+(install|i|add|remove|uninstall|publish|ci)(\s|$)/i,
+  /(^|\s)git\s+(reset|clean|restore|rm|push|pull|fetch|merge|rebase|commit|stash)(\s|$)/i,
+  /(^|\s)(curl|wget|Invoke-WebRequest|iwr)\s+.*\|/i,
+  /(^|\s)(printenv|env)(\s|$)/i,
+  /(^|\s)(cat|type|more|less|Get-Content)\s+[^\n]*(\.env|id_rsa|id_ed25519|\.pem|\.key)/i,
+  /\b(sed\s+-i|perl\s+-i|python\s+-c|node\s+-e|bash\s+-c|powershell\s+.*-command)\b/i,
 ];
 
-const ALLOWED_ARGS: Record<string, string[]> = {
-  npm: ['run', 'exec', 'view', 'ls', 'list', 'outdated', 'audit'],
-  npx: ['tsc', 'eslint', 'prettier', 'vitest', 'jest'],
-  node: ['--version', '--check'],
-  tsc: ['--noEmit', '--init', '--version', '--help'],
-  eslint: ['--version', '--init', '--help'],
-  prettier: ['--version', '--help'],
-  vitest: ['run', '--version', '--help'],
-  jest: ['--version', '--help'],
-  git: ['status', 'diff', 'log', 'branch', 'show', 'blame', 'ls-files'],
-};
-
-const SAFE_ARG_CHARS = /^[A-Za-z0-9_,.\/@:-]+$/;
-
-function shellEscape(arg: string): string {
-  if (SAFE_ARG_CHARS.test(arg)) return arg;
-  return `'${arg.replace(/'/g, "'\\''")}'`;
-}
+const SAFE_SHELL_META = /[;&|`$<>\r\n]/;
 
 export class CommandSecurityError extends Error {
   constructor(message: string) {
@@ -122,62 +110,59 @@ export class CommandSecurityError extends Error {
   }
 }
 
+/**
+ * Validate a command before showing it to the user for approval.
+ * The approval dialog is the authorization boundary; validation blocks shell
+ * chaining, destructive primitives, secret dumping and opaque inline scripts,
+ * while allowing ordinary project inspection and build/test commands.
+ */
 export function validateCommand(command: string): void {
   if (typeof command !== 'string' || !command.trim()) {
     throw new CommandSecurityError('Command is empty.');
   }
-  if (command.length > 1200) {
-    throw new CommandSecurityError('Command is too long.');
-  }
-
+  if (command.length > 1200) throw new CommandSecurityError('Command is too long.');
   const trimmed = command.trim();
-  if (/[;&|`$(){}<>]/.test(trimmed)) {
-    throw new CommandSecurityError(
-      'Command contains shell metacharacters or redirection operators.'
-    );
+  if (SAFE_SHELL_META.test(trimmed)) {
+    throw new CommandSecurityError('Shell chaining, pipes, redirection and command substitution are not allowed. Submit one command at a time.');
   }
-  if (
-    /\b(rm|mv|cp|del|erase|rmdir|mkdir|touch|tee|chmod|chown|shutdown|reboot|format|git\s+(reset|checkout|clean|restore|rm|apply|push|pull|fetch|merge|rebase|commit|stash)\b|npm\s+(install|ci|uninstall|publish|add|remove)\b|pnpm\s+(add|install|remove|i)\b|yarn\s+(add|install|remove)\b|patch|printenv|env)\b/i.test(
-      trimmed
-    )
-  ) {
-    throw new CommandSecurityError(
-      'This command appears to modify files, dependencies, or system state and is blocked.'
-    );
-  }
-  if (
-    /\b(sed\s+-i|perl\s+-i|python\s+-c|node\s+-e|bash\s+-c|powershell\s+.*-command)\b/i.test(
-      trimmed
-    )
-  ) {
-    throw new CommandSecurityError('Inline script execution is blocked.');
-  }
-  if (
-    /\b(cat|type|more|less|Get-Content)\s+/i.test(trimmed) &&
-    /(\.env|id_rsa|id_ed25519|\.pem|\.key|secret)/i.test(trimmed)
-  ) {
-    throw new CommandSecurityError('Reading secret files via command is blocked.');
-  }
-
-  const tokens = trimmed.split(/\s+/);
-  const cmd = tokens[0].toLowerCase();
-  if (!ALLOWED_COMMANDS.includes(cmd)) {
-    throw new CommandSecurityError(
-      `Command '${cmd}' is not in the allowlist. Use npm/npx/tsc/eslint/prettier/vitest/jest/git only.`
-    );
-  }
-
-  const allowed = ALLOWED_ARGS[cmd] ?? [];
-  for (let i = 1; i < tokens.length; i++) {
-    const arg = tokens[i];
-    if (!allowed.some((prefix) => arg.startsWith(prefix))) {
-      throw new CommandSecurityError(`Argument '${arg}' is not allowed for command '${cmd}'.`);
+  for (const pattern of BLOCKED_COMMAND_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      throw new CommandSecurityError('This command is blocked because it can modify system state, expose secrets, or execute opaque inline code.');
     }
+  }
+  const tokens = trimmed.split(/\s+/);
+  const executable = tokens[0].replace(/\\/g, '/').split('/').pop()!.toLowerCase().replace(/\.(exe|cmd|bat)$/, '');
+  if (!ALLOWED_COMMANDS.has(executable)) {
+    throw new CommandSecurityError(`Command '${executable}' is not allowed. Use an approved development or inspection command.`);
+  }
+  if (executable === 'git') {
+    const subcommand = (tokens[1] || '').toLowerCase();
+    if (!['status', 'diff', 'log', 'branch', 'show', 'blame', 'ls-files', 'rev-parse'].includes(subcommand)) {
+      throw new CommandSecurityError(`Git operation '${subcommand || '(missing)'}' is not allowed.`);
+    }
+  }
+  if (['npm', 'pnpm', 'yarn'].includes(executable)) {
+    const action = (tokens[1] || '').toLowerCase();
+    if (!['run', 'test', 'start', 'exec', 'view', 'ls', 'list', 'outdated', 'audit', 'version', '--version'].includes(action)) {
+      throw new CommandSecurityError(`Package-manager operation '${action || '(missing)'}' is not allowed.`);
+    }
+  }
+  if (executable === 'npx') {
+    const tool = (tokens[1] || '').toLowerCase();
+    if (!['tsc', 'eslint', 'prettier', 'vitest', 'jest', 'vite', 'next', 'tsx', 'ts-node', 'tsup', 'playwright', 'webpack', 'rollup', 'tailwindcss', 'nodemon'].includes(tool)) {
+      throw new CommandSecurityError(`npx tool '${tool || '(missing)'}' is not in the development-tool allowlist.`);
+    }
+  }
+  // Reject option-like command injection and explicit sensitive path arguments.
+  const normalizedTokens = tokens.map((token) => token.replace(/^['\"]|['\"]$/g, ''));
+  if (normalizedTokens.some((token) => /(^|[\/])(?:\.env(?:\.|$)|\.npmrc$|\.netrc$|\.ssh(?:[\/]|$)|\.aws(?:[\/]|$)|\.gnupg(?:[\/]|$)|id_rsa|id_ed25519|credentials(?:\.json)?$|secrets\.json$|\.secrets$|\.pem$|\.key$|\.p12$|\.pfx$)/i.test(token))) {
+    throw new CommandSecurityError('Access to secret or private-key paths through terminal commands is blocked.');
   }
 }
 
 export function buildSafeCommand(command: string): string {
   validateCommand(command);
-  const tokens = command.trim().split(/\s+/);
-  return tokens.map(shellEscape).join(' ');
+  // Preserve quoting for paths and arguments. Validation rejects shell
+  // operators and line breaks before this string reaches exec.
+  return command.trim();
 }

@@ -28,6 +28,10 @@ export class AgentLoop {
     return this.currentChatId;
   }
 
+  get currentMessages(): ChatMessage[] {
+    return [...this.history];
+  }
+
   resetConversation(): void {
     this.stopRequest();
     this.history = [];
@@ -100,6 +104,7 @@ export class AgentLoop {
     const controller = new AbortController();
     this.abortController = controller;
     this.history.push({ role: 'user', content: prompt });
+    if (config.autoSaveChats && this.currentChatId) this.persistCurrentChat();
     this.post({ type: 'userMessage', text: prompt });
     this.post({ type: 'assistantStart' });
     this.post({ type: 'busy', value: true });
@@ -116,6 +121,7 @@ export class AgentLoop {
         this.post({ type: 'error', text: err });
       } else {
         this.post({ type: 'status', text: 'Stopped.' });
+        this.post({ type: 'assistantStopped' });
       }
     } finally {
       if (config.autoSaveChats && this.currentChatId) {
@@ -200,6 +206,7 @@ export class AgentLoop {
             ? 'Nemotron is thinking…'
             : 'Working with workspace tools…',
       });
+      if (round > 0) this.post({ type: 'assistantResume' });
       appliedFileEdit = false;
       const response = await model.request(signal, messages, this.tools.toolDefinitions());
 
@@ -209,6 +216,7 @@ export class AgentLoop {
         ...(response.toolCalls.length ? { tool_calls: response.toolCalls } : {}),
       };
       this.history.push(assistantMessage);
+      this.persistCurrentChat();
 
       if (!response.toolCalls.length) {
         if (!response.content?.trim()) {
@@ -227,6 +235,7 @@ export class AgentLoop {
         }
         const notice = `I reached the configured tool-round limit (${config.maxToolRounds}). Ask me to continue.`;
         this.history.push({ role: 'assistant', content: notice });
+        this.persistCurrentChat();
         this.post({ type: 'delta', text: `\n\n${notice}` });
         this.post({ type: 'assistantDone' });
         return;
@@ -238,7 +247,8 @@ export class AgentLoop {
           hardLimitReached = true;
           const result = `Hard tool-call limit reached (${HARD_TOOL_CALL_LIMIT} individual calls). No further tools were executed. Ask the user to continue in a new request.`;
           this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
-          this.post({ type: 'toolDone', name: toolCall.function?.name || 'unknown', result });
+          this.persistCurrentChat();
+          this.post({ type: 'toolDone', id: toolCall.id, name: toolCall.function?.name || 'unknown', result });
           continue;
         }
         individualToolCalls++;
@@ -251,7 +261,8 @@ export class AgentLoop {
         } catch (error) {
           const result = `Invalid tool arguments: ${error instanceof Error ? error.message : String(error)}. The operation was not executed.`;
           this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
-          this.post({ type: 'toolDone', name: name || 'unknown', status: 'invalid', result });
+          this.persistCurrentChat();
+          this.post({ type: 'toolDone', id: toolCall.id, name: name || 'unknown', status: 'invalid', result });
           continue;
         }
         const signature = `${name}:${stableSerialize(args)}`;
@@ -259,10 +270,11 @@ export class AgentLoop {
         if (previous !== undefined) {
           const result = `Duplicate tool call blocked. This exact operation was already attempted in this request. Previous outcome: ${previous}`;
           this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
-          this.post({ type: 'toolDone', name, status: 'invalid', result: result.slice(0, 1200) });
+          this.persistCurrentChat();
+          this.post({ type: 'toolDone', id: toolCall.id, name, status: 'invalid', result: result.slice(0, 1200) });
           continue;
         }
-        this.post({ type: 'toolStart', name, args });
+        this.post({ type: 'toolStart', id: toolCall.id, name, args });
         let result: string;
         let resultStatus: ToolResult['status'] = 'failed';
         try {
@@ -289,11 +301,13 @@ export class AgentLoop {
           seenCalls.set(signature, result.slice(0, 1000));
         }
         this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
-        this.post({ type: 'toolDone', name, status: resultStatus, result: result.slice(0, 1200) });
+        this.persistCurrentChat();
+        this.post({ type: 'toolDone', id: toolCall.id, name, status: resultStatus, result: result.slice(0, 1200) });
       }
       if (hardLimitReached) {
         const notice = `I stopped tool execution after the hard limit of ${HARD_TOOL_CALL_LIMIT} individual calls. The conversation is preserved; ask me to continue with a new request.`;
         this.history.push({ role: 'assistant', content: notice });
+        this.persistCurrentChat();
         this.post({ type: 'delta', text: `\n\n${notice}` });
         this.post({ type: 'assistantDone' });
         return;
@@ -326,6 +340,14 @@ tools have not confirmed.
 Workspace: ${rootNames}
 
 Configured persona: ${personaLine}
+
+Preferred tone: ${config.tone?.trim() || 'balanced and natural'}
+
+Technical expertise: ${config.expertise?.length ? config.expertise.join(', ') : 'general software development'}
+
+Preferred response language: ${config.responseLanguage === 'auto' ? 'match the user’s language' : config.responseLanguage}
+
+Code style preference: ${config.codeStyle || 'follow project conventions'}
 
 Memory: ${memoryLine}
 

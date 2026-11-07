@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { isSensitivePath, safeUri, assertPathInsideWorkspace, validateCommand } from './security';
+import { isSensitivePath, safeUri, assertPathInsideWorkspace, validateCommand, buildSafeCommand } from './security';
 import {
   EXCLUDES,
   MAX_FILE_READ_BYTES,
@@ -35,7 +35,8 @@ export type AskApproval = (payload: {
   newPreview?: string;
   command?: string;
   patchCount?: number;
-}) => Promise<boolean>;
+  diff?: string;
+}, signal?: AbortSignal) => Promise<boolean>;
 
 export interface EditProgress {
   id: string;
@@ -182,7 +183,7 @@ export class ToolRegistry {
     const bytes = await vscode.workspace.fs.readFile(uri);
     if (bytes.byteLength > MAX_FILE_READ_BYTES) {
       throw new Error(
-        'File is larger than 120 KB. Search for a smaller relevant section or inspect it in the editor.'
+        'File is larger than 250 KB. Search for a smaller relevant section or inspect it in the editor.'
       );
     }
     if (bytes.includes(0)) {
@@ -331,8 +332,10 @@ export class ToolRegistry {
         path: relativePath,
         oldPreview: '(new file)',
         newPreview: createContent.slice(0, 12_000),
+        diff: createUnifiedDiff('', createContent),
         patchCount: 1,
       }, signal);
+      if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for file-creation approval.');
       if (!approved) {
         return { content: `User rejected the creation of ${relativePath}. Do not retry the same change.`, status: 'rejected' };
       }
@@ -372,20 +375,20 @@ export class ToolRegistry {
     }
 
     const document = await vscode.workspace.openTextDocument(uri);
-    if (document.isDirty) {
-      throw new Error(` ${relativePath} has unsaved editor changes. Save it first; the agent will not overwrite or implicitly save your unsaved work.`.trim());
-    }
+    // Patch the live VS Code document snapshot so unsaved user edits are preserved.
+    // Approval preview and stale checks are based on this exact in-memory version.
+    const wasDirtyAtProposal = document.isDirty;
     const originalText = document.getText();
     const originalDiskBytes = Buffer.from(await vscode.workspace.fs.readFile(uri));
     const originalVersion = document.version;
     if (Buffer.byteLength(originalText, 'utf8') > MAX_FILE_REPLACE_BYTES) {
-      throw new Error('Refusing to edit a file larger than 200 KB.');
+      throw new Error('Refusing to edit a file larger than 1 MB.');
     }
     if (originalText.includes('\0')) throw new Error('Refusing to edit a binary file.');
 
     const patchResult = applyExactTextPatches(originalText, edits);
     if (Buffer.byteLength(patchResult.text, 'utf8') > MAX_FILE_EDIT_BYTES) {
-      throw new Error('The resulting file would exceed 250 KB. Split the change into smaller files.');
+      throw new Error('The resulting file would exceed 1 MB. Split the change into smaller files.');
     }
     const preview = createPatchPreview(patchResult.patches);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -393,12 +396,14 @@ export class ToolRegistry {
       id,
       kind: 'file',
       title: `Apply ${patchResult.patches.length} targeted edit${patchResult.patches.length === 1 ? '' : 's'} to ${relativePath}`,
-      summary: summary || 'Targeted patch proposed by Nemotron. Unmatched file content will remain untouched.',
+      summary: (summary || 'Targeted patch proposed by Nemotron. Unmatched file content will remain untouched.') + (wasDirtyAtProposal ? ' Existing unsaved editor changes are preserved and will also be saved when this approved patch is applied.' : ''),
       path: relativePath,
       oldPreview: preview.oldPreview,
       newPreview: preview.newPreview,
+      diff: createUnifiedDiff(preview.oldPreview, preview.newPreview),
       patchCount: patchResult.patches.length,
     }, signal);
+    if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for patch approval.');
     if (!approved) {
       return { content: `User rejected the targeted patch for ${relativePath}. Do not retry the same change.`, status: 'rejected' };
     }
@@ -412,14 +417,16 @@ export class ToolRegistry {
       await new Promise((resolve) => setTimeout(resolve, 50));
       if (signal?.aborted) throw new Error('Request cancelled before the approved patch could be applied.');
       await assertPathInsideWorkspace(uri, root);
-      if (document.isDirty) {
-        throw new Error('The file became dirty while approval was pending. Nothing was applied. Save or discard those changes and retry.');
-      }
       if (document.version !== originalVersion || document.getText() !== originalText) {
         throw new Error('The file changed while approval was pending. Nothing was applied. Read the latest file and propose a fresh patch.');
       }
       const currentDiskBytes = Buffer.from(await vscode.workspace.fs.readFile(uri));
-      if (!currentDiskBytes.equals(originalDiskBytes)) {
+      const currentDiskText = new TextDecoder('utf-8').decode(currentDiskBytes);
+      const originalDiskText = new TextDecoder('utf-8').decode(originalDiskBytes);
+      const diskChanged = wasDirtyAtProposal
+        ? currentDiskText !== originalDiskText && currentDiskText !== originalText
+        : !currentDiskBytes.equals(originalDiskBytes);
+      if (diskChanged) {
         throw new Error('The file changed on disk while approval was pending. Nothing was applied. Read the latest file and propose a fresh patch.');
       }
 
@@ -463,29 +470,9 @@ export class ToolRegistry {
     }
   }
 
-  private requestApproval(
-    payload: Parameters<AskApproval>[0],
-    signal?: AbortSignal
-  ): Promise<boolean> {
-    if (!signal) return this.askApproval(payload);
-    if (signal.aborted) return Promise.reject(new Error('Request cancelled while waiting for approval.'));
-    return new Promise<boolean>((resolve, reject) => {
-      const onAbort = () => {
-        signal.removeEventListener('abort', onAbort);
-        reject(new Error('Request cancelled while waiting for approval.'));
-      };
-      signal.addEventListener('abort', onAbort, { once: true });
-      this.askApproval(payload).then(
-        (approved) => {
-          signal.removeEventListener('abort', onAbort);
-          resolve(approved);
-        },
-        (error) => {
-          signal.removeEventListener('abort', onAbort);
-          reject(error);
-        }
-      );
-    });
+  private requestApproval(payload: Parameters<AskApproval>[0], signal?: AbortSignal): Promise<boolean> {
+    if (signal?.aborted) return Promise.reject(new Error('Request cancelled while waiting for approval.'));
+    return this.askApproval(payload, signal);
   }
 
   private reportProgress(progress: EditProgress): void {
@@ -499,6 +486,7 @@ export class ToolRegistry {
 
     const root = vscode.workspace.workspaceFolders?.[0]?.uri;
     if (!root) throw new Error('No workspace folder is open.');
+    if (!vscode.workspace.isTrusted) throw new Error('Terminal execution is disabled in an untrusted workspace. Trust this workspace first.');
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const approved = await this.requestApproval({
       id,
@@ -507,6 +495,7 @@ export class ToolRegistry {
       summary: reason || 'Command proposed by Nemotron',
       command,
     }, signal);
+    if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for command approval.');
     if (!approved) {
       return {
         content:
@@ -518,7 +507,7 @@ export class ToolRegistry {
     const cwd = root.fsPath;
     const shell = process.platform === 'win32' ? undefined : '/bin/bash';
     try {
-      const result = await execAsync(command, {
+      const result = await execAsync(buildSafeCommand(command), {
         cwd,
         timeout: COMMAND_TIMEOUT_MS,
         maxBuffer: COMMAND_MAX_BUFFER,
@@ -560,4 +549,29 @@ export class ToolRegistry {
 function isFileNotFound(error: unknown): boolean {
   const e = error as { code?: string; name?: string; message?: string } | undefined;
   return e?.code === 'FileNotFound' || e?.name === 'FileNotFound' || String(e?.message || '').includes('FileNotFound');
+}
+
+
+function createUnifiedDiff(oldText: string, newText: string): string {
+  const oldLines = oldText.split(/\r?\n/);
+  const newLines = newText.split(/\r?\n/);
+  const max = 160;
+  const a = oldLines.slice(0, max);
+  const b = newLines.slice(0, max);
+  // A compact LCS diff is sufficient for approval previews; actual edits still
+  // use the already-validated exact anchors and are not computed from this view.
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) {
+    dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  }
+  const rows: Array<{ kind: 'add' | 'remove' | 'same'; text: string }> = [];
+  let i = 0, j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) rows.push({ kind: 'same', text: a[i++] }), j++;
+    else if (j < b.length && (i === a.length || dp[i][j + 1] >= dp[i + 1][j])) rows.push({ kind: 'add', text: b[j++] });
+    else rows.push({ kind: 'remove', text: a[i++] });
+  }
+  const output = rows.map((row) => `${row.kind === 'add' ? '+' : row.kind === 'remove' ? '-' : ' '} ${row.text}`);
+  if (oldLines.length > max || newLines.length > max) output.push('… diff preview truncated …');
+  return output.join('\n');
 }

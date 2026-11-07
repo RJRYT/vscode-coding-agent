@@ -2,6 +2,16 @@
 
 A VS Code workspace coding agent powered by NVIDIA Nemotron 3.5 Super VL 120B A12B. It can inspect your project, search code, prepare targeted patches, and run approved checks.
 
+## 0.2.14 reliability and approval UI update
+
+- Added a visible assistant loading state and clearer transitions while thinking, running tools, waiting for approval, applying edits, stopping, and completing requests.
+- Tool calls and their results are saved with the conversation and reconstructed when a chat is reopened. Chat persistence now uses an in-memory workspace cache and ordered writes to avoid dropping tool history during rapid updates.
+- File and command approval actions are docked directly above the composer. File changes are shown inline in the conversation as red removed lines and green added lines.
+- Pending approval cards are restored after a webview refresh while the extension host remains alive. Cancelling a request also clears its pending approval instead of leaving it stuck.
+- Relaxed command validation for common development and inspection commands while retaining explicit approval and blocks for destructive operations, shell chaining, inline scripts, and secret-file access.
+- Expanded exact-match editing limits to support larger focused changes. Dirty editor buffers can be patched against their live snapshot; the approval explains that existing unsaved changes will also be saved. Stale editor or disk changes still reject the patch.
+- Added dropdown personalization for persona, tone, technical focus, response language, and code style. These preferences are now injected into the system prompt.
+
 ## 0.2.2 webview startup fix
 
 - Fixed a critical startup bug in the embedded webview script. HTML is now built with `String.raw`, preserving regular-expression and string escapes in the inline JavaScript. Without this, the Markdown link matcher became an invalid regular expression at runtime, preventing **all** UI event handlers from registering and leaving the chat-history screen unresponsive.
@@ -11,7 +21,7 @@ A VS Code workspace coding agent powered by NVIDIA Nemotron 3.5 Super VL 120B A1
 ## What is new in 0.2.0
 
 - **Targeted edits instead of whole-file replacement.** Existing files are changed only through exact `oldText` → `newText` anchors. Every anchor must match exactly once. Missing, duplicated, overlapping, overly broad, or stale patches are rejected.
-- **No implicit save of unsaved work.** The agent refuses to edit a dirty editor buffer. Save your own changes first.
+- **Dirty-buffer preservation.** The agent patches the live editor snapshot, preserving existing unsaved changes. The approval card warns that approving the patch also saves those existing changes.
 - **Approval before changes.** The extension shows only the changed sections, asks for approval, then applies all edits as one undoable VS Code WorkspaceEdit transaction.
 - **Staged edit progress.** After approval, the UI shows patch staging, application, saving, and disk verification so there is visible activity instead of a silent pause.
 - **Post-save verification.** The extension checks the editor and saved file against the approved patch before reporting success.
@@ -56,12 +66,12 @@ Install the generated VSIX through **Extensions → Install from VSIX...**.
 
 ## Safety behaviour for file edits
 
-The model cannot replace an existing file with a generated full-file string. For an existing file it must provide a list of exact, unique text anchors. The extension validates all anchors against one source snapshot before showing an approval preview. It rejects:
+The model cannot replace an existing file with a generated full-file string. For an existing file it must provide a list of exact, unique text anchors. The extension validates all anchors against one source snapshot before showing an inline diff and approval controls. It rejects:
 
 - Anchors that do not exist or occur more than once.
 - Overlapping edit ranges.
 - Broad/whole-file replacements.
-- A file that has unsaved editor changes.
+- A file whose editor version or on-disk contents change while approval is pending.
 - A file that changes while the approval dialog is open.
 - Edits outside the trusted workspace or edits to detected secret files.
 
@@ -74,7 +84,7 @@ New files can still be created with `createContent`, but only when the target pa
 - Workspace reads and search are read-only.
 - Terminal commands require approval and run in the workspace root.
 - A limited set of file-writing, dependency-install, secret-dump, and destructive command patterns is blocked.
-- The extension does not expose arbitrary shell or direct delete-file tools.
+- The extension does not expose direct delete-file tools or allow shell command chaining. Approved development commands run as a single command.
 
 Review every approved patch and command. Commands can still have effects beyond the workspace depending on the shell and installed tools.
 
@@ -90,7 +100,7 @@ Review every approved patch and command. Commands can still have effects beyond 
 
 ## Current limitations
 
-This is not full Codex parity. Patch application is exact-anchor based rather than an interactive Git diff editor. It refuses to make edits when the target editor has unsaved changes. The workspace search is bounded and may skip large files. It targets desktop VS Code; browser-based VS Code environments may not support the Node child-process command runner.
+This is not full Codex parity. Patch application is exact-anchor based and the approval diff is a preview, not a fully interactive Git diff editor. Pending approval UI can be restored after a webview refresh while the extension host remains alive; a full extension-host restart cancels in-flight operations. The workspace search is bounded and may skip large files. It targets desktop VS Code; browser-based VS Code environments may not support the Node child-process command runner.
 
 
 ## 0.2.1 stability update
