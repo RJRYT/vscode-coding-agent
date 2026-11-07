@@ -121,7 +121,7 @@ export class ToolRegistry {
         function: {
           name: 'propose_file_edit',
           description:
-            'Propose a SAFE, targeted edit to an existing workspace file using exact unique text anchors. Never send the whole file. Read the latest file first. For each edit, oldText must match exactly once and newText contains only the replacement for that section. To create a new file only, use createContent.',
+            'Propose a SAFE edit to an existing workspace file. Read the latest file first; read_file returns the live VS Code document including unsaved changes. Prefer small, unique oldText anchors and keep edits non-overlapping. LF/CRLF differences are normalized safely, but other whitespace is not guessed. Use a full-file oldText snapshot only as a last resort when you have just read that exact file snapshot; it still requires explicit approval and stale-state verification. To create a new file only, use createContent.',
           parameters: {
             type: 'object',
             properties: {
@@ -131,7 +131,7 @@ export class ToolRegistry {
                 type: 'array',
                 minItems: 1,
                 maxItems: 20,
-                description: 'Targeted exact replacements for an existing file. Do not replace the whole file.',
+                description: 'Exact replacements for an existing file. Prefer focused unique anchors; full-file snapshot replacement is allowed only as a last resort and still requires approval.',
                 items: {
                   type: 'object',
                   properties: {
@@ -182,19 +182,33 @@ export class ToolRegistry {
     if (!root) throw new Error('No workspace folder is open.');
     const uri = safeUri(relativePath, root);
     await assertPathInsideWorkspace(uri, root);
-    const bytes = await vscode.workspace.fs.readFile(uri);
-    if (bytes.byteLength > MAX_FILE_READ_BYTES) {
-      throw new Error(
-        'File is larger than 250 KB. Search for a smaller relevant section or inspect it in the editor.'
-      );
+    const openDocument = vscode.workspace.textDocuments.find(
+      (candidate) => candidate.uri.toString() === uri.toString()
+    );
+    if (!openDocument) {
+      const stat = await vscode.workspace.fs.stat(uri);
+      if (stat.size > MAX_FILE_READ_BYTES) {
+        throw new Error(
+          'File is larger than 250 KB. Open it in the editor and attach the relevant selection, or search for a smaller section.'
+        );
+      }
+      const bytes = await vscode.workspace.fs.readFile(uri);
+      if (bytes.includes(0)) {
+        throw new Error(
+          'This appears to be a binary file. Binary file reading is not supported yet.'
+        );
+      }
     }
-    if (bytes.includes(0)) {
-      throw new Error(
-        'This appears to be a binary file. Binary file reading is not supported yet.'
-      );
+    // Use the live VS Code document so read_file and propose_file_edit share
+    // the same snapshot, including unsaved editor changes.
+    const document = openDocument ?? await vscode.workspace.openTextDocument(uri);
+    const text = document.getText();
+    if (Buffer.byteLength(text, 'utf8') > MAX_FILE_READ_BYTES) {
+      throw new Error('The live editor document exceeds the 250 KB read limit. Attach a smaller selection instead.');
     }
-    const text = Buffer.from(bytes).toString('utf8');
-    return { content: `--- ${relativePath} ---\n${text}` };
+    return {
+      content: `--- ${relativePath} ---\nSnapshot: VS Code document version ${document.version}${document.isDirty ? ' (contains unsaved editor changes)' : ' (saved document)'}\nLine endings are preserved.\n\n${text}`,
+    };
   }
 
   getActiveEditorContext(): ToolResult {

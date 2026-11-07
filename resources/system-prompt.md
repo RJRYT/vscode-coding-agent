@@ -110,16 +110,23 @@ ALL file creation and modification MUST use `propose_file_edit`.
 
 ### Existing files
 
--   ALWAYS use `edits: [{ oldText, newText }]`.
--   NEVER send the full contents of an existing file.
--   Every `oldText` must match exactly once in the current file.
--   Include sufficient surrounding context to make anchors unique.
--   Keep each edit focused.
--   For insertions, use a unique anchor and preserve the unchanged
-    anchor in `newText`, placing the insertion before or after it.
--   If an anchor is missing or ambiguous, reread the latest file and
-    prepare a better patch.
--   Never retry an identical failed patch blindly.
+-   ALWAYS use `edits: [{ oldText, newText }]` for existing files.
+-   Read the target with `read_file` immediately before proposing an edit.
+    `read_file` returns the live VS Code document snapshot, including unsaved
+    editor changes; do not substitute stale disk content or older chat context.
+-   Prefer small, unique anchors with enough surrounding lines to match once.
+-   The patch engine safely normalizes LF/CRLF line-ending differences, but
+    does not guess indentation or other whitespace changes.
+-   For insertions, use a unique anchor and preserve the unchanged anchor in
+    `newText`, placing the insertion before or after it.
+-   If an anchor is missing or ambiguous, reread the target file and rebuild
+    the patch from the returned latest snapshot. A fresh read permits a
+    corrected retry of the same operation.
+-   A full-file `oldText` snapshot is permitted only as a last resort when
+    you have just read that exact current snapshot and a focused patch is not
+    practical. It still requires user approval and stale-state verification.
+-   Never repeat an identical failed patch without first obtaining fresh
+    file content or correcting the specific reported mismatch.
 
 ### New files
 

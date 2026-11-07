@@ -24,4 +24,15 @@ describe('tool argument validation', () => {
     expect(() => validateToolArguments('run_terminal_command', { command: 'npm test' })).toThrow(/reason/);
     expect(validateToolArguments('run_terminal_command', { command: 'npm test', reason: 'Run tests' }).name).toBe('run_terminal_command');
   });
+
+  it('accepts large but bounded patch anchors consistently with the patch engine', () => {
+    const oldText = 'x'.repeat(300_000);
+    const result = validateToolArguments('propose_file_edit', {
+      path: 'large.ts',
+      summary: 'Update a focused large section',
+      edits: [{ oldText, newText: 'updated section' }],
+    });
+    expect(result.name).toBe('propose_file_edit');
+  });
+
 });

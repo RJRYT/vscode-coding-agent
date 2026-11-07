@@ -99,9 +99,9 @@ export function validateToolArguments(name: string, value: unknown): ValidatedTo
         const edits: ValidatedEdit[] = rawEdits.map((item, index) => {
           if (!isRecord(item)) throw new Error(`Edit ${index + 1} must be an object.`);
           assertKeys(item, ['oldText', 'newText']);
-          const oldText = requiredString(item, 'oldText', 250_000);
+          const oldText = requiredString(item, 'oldText', 1_000_000);
           const newText = item.newText;
-          if (typeof newText !== 'string' || newText.length > 250_000) throw new Error(`Edit ${index + 1} has invalid newText.`);
+          if (typeof newText !== 'string' || newText.length > 1_000_000) throw new Error(`Edit ${index + 1} has invalid newText (maximum 1 MB).`);
           return { oldText, newText };
         });
         return { name: 'propose_file_edit', args: { path: filePath, summary, edits } };
