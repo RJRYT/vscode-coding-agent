@@ -1,3 +1,5 @@
+import { MAX_PATCH_TEXT_CHARS, MAX_CREATE_CONTENT_CHARS, MAX_COMMAND_LENGTH } from './limits';
+
 export type ToolName =
   | 'list_workspace_files'
   | 'read_file'
@@ -99,18 +101,20 @@ export function validateToolArguments(name: string, value: unknown): ValidatedTo
         const edits: ValidatedEdit[] = rawEdits.map((item, index) => {
           if (!isRecord(item)) throw new Error(`Edit ${index + 1} must be an object.`);
           assertKeys(item, ['oldText', 'newText']);
-          const oldText = requiredString(item, 'oldText', 1_000_000);
+          const oldText = requiredString(item, 'oldText', MAX_PATCH_TEXT_CHARS);
           const newText = item.newText;
-          if (typeof newText !== 'string' || newText.length > 1_000_000) throw new Error(`Edit ${index + 1} has invalid newText (maximum 1 MB).`);
+          if (typeof newText !== 'string' || newText.length > MAX_PATCH_TEXT_CHARS) {
+            throw new Error(`Edit ${index + 1} has invalid newText (maximum ${MAX_PATCH_TEXT_CHARS.toLocaleString()} characters).`);
+          }
           return { oldText, newText };
         });
         return { name: 'propose_file_edit', args: { path: filePath, summary, edits } };
       }
-      if (typeof rawContent !== 'string' || rawContent.length > 1_000_000) throw new Error('createContent exceeds 1 MB or is missing.');
+      if (typeof rawContent !== 'string' || rawContent.length > MAX_CREATE_CONTENT_CHARS) throw new Error(`createContent exceeds ${MAX_CREATE_CONTENT_CHARS.toLocaleString()} characters or is missing.`);
       return { name: 'propose_file_edit', args: { path: filePath, summary, createContent: rawContent } };
     }
     case 'run_terminal_command':
       assertKeys(args, ['command', 'reason']);
-      return { name: 'run_terminal_command', args: { command: requiredString(args, 'command', 1200), reason: requiredString(args, 'reason', 2000) } };
+      return { name: 'run_terminal_command', args: { command: requiredString(args, 'command', MAX_COMMAND_LENGTH), reason: requiredString(args, 'reason', 2000) } };
   }
 }

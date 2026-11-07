@@ -2,7 +2,7 @@
   "name": "nemotron-coding-agent",
   "displayName": "Nemotron Coding Agent",
   "description": "A workspace-aware coding agent powered by NVIDIA Nemotron. Review and approve file edits and terminal commands.",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "icon": "media/extension-icon.png",
   "publisher": "rjryt",
   "license": "SEE LICENSE IN LICENSE",
@@ -104,10 +104,10 @@
         },
         "nemotronAgent.maxToolRounds": {
           "type": "integer",
-          "default": 8,
+          "default": 100,
           "minimum": 1,
-          "maximum": 50,
-          "description": "Maximum consecutive tool-calling rounds per user request."
+          "maximum": 200,
+          "description": "Maximum consecutive model tool-calling rounds per user request. There is no separate individual tool-call cap."
         },
         "nemotronAgent.persona": {
           "type": "string",

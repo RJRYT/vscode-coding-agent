@@ -130,3 +130,12 @@ New tests cover centralized tool validation and dispatch, chat metadata behavior
 ### 0.2.15 implementation notes
 
 This release extracts the webview and engineering prompt into runtime resources, introduces typed webview and tool argument boundaries, separates chat persistence/context collection/tool dispatch into focused modules, adds structured output-channel diagnostics, and expands unit coverage for storage, model streaming, validation, and dispatch. Failed new-file writes are compensated only when the file still matches the agent-created payload; failed editor saves attempt a guarded in-memory rollback.
+
+
+## v0.2.17 reliability changes
+
+- Removed the separate hard cap on individual tool calls. The configurable model tool-round setting remains available (default 100, maximum 200).
+- Terminal commands now support shell chaining, pipes, redirection, command substitution, multiline scripts, and normal project commands. Every command still requires explicit approval and a trusted VS Code workspace. Commands run with the current user's OS permissions and are not sandboxed.
+- Increased file read limit to 2 MB, per-edit anchor/replacement limit to 5 million characters, and resulting file limit to 10 MB.
+- Exact full-file snapshot replacements are now allowed when `oldText` exactly matches the current file; the approval and stale-snapshot checks still apply.
+- Increased terminal command length to 20,000 characters, no automatic command timeout (the user can stop the active request), and output buffer to 10 MB.

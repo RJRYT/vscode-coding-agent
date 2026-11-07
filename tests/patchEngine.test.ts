@@ -34,26 +34,17 @@ describe('applyExactTextPatches', () => {
     ).toThrow(/overlap/);
   });
 
-  it('allows an exact full-snapshot replacement as an approved fallback', () => {
+  it('allows an exact full-file snapshot replacement for deliberate rewrites', () => {
     const result = applyExactTextPatches('const a = 1;', [
       { oldText: 'const a = 1;', newText: 'const a = 2;' },
     ]);
     expect(result.text).toBe('const a = 2;');
   });
 
-  it('matches LF anchors against CRLF files without changing the file line-ending style', () => {
-    const source = 'before\r\nconst value = 1;\r\nafter\r\n';
-    const result = applyExactTextPatches(source, [
-      { oldText: 'const value = 1;\n', newText: 'const value = 2;\n' },
-    ]);
-    expect(result.text).toBe('before\r\nconst value = 2;\r\nafter\r\n');
-    expect(result.matchingMode).toBe('line-ending-normalized');
-  });
-
-  it('returns actionable guidance when an anchor differs beyond line endings', () => {
-    expect(() => applyExactTextPatches('  const value = 1;', [
-      { oldText: 'const value = 1;', newText: 'const value = 2;' },
-    ])).toThrow(/Read the file again/);
+  it('supports patch anchors larger than 100 KB', () => {
+    const anchor = 'x'.repeat(150_000) + 'UNIQUE';
+    const source = `before\n${anchor}\nafter`;
+    expect(applyExactTextPatches(source, [{ oldText: anchor, newText: 'updated' }]).text).toBe('before\nupdated\nafter');
   });
 
   it('allows a large focused replacement when it is not the entire file', () => {

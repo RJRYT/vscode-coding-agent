@@ -166,25 +166,10 @@ export class AgentLoop {
     const system = this.systemPrompt(config);
     const contextBlock = workspaceContext ? this.contextCollector.format(workspaceContext) : '';
     const seenCalls = new Map<string, string>();
-    // The hard budget counts completed operations, not malformed arguments or
-    // patch-anchor mismatches. A separate consecutive-failure guard prevents
-    // endless model retries without penalizing successful work.
-    let successfulToolCalls = 0;
-    let consecutiveToolFailures = 0;
-    let consecutiveFileEditFailures = 0;
-    const HARD_TOOL_CALL_LIMIT = 24;
-    const MAX_CONSECUTIVE_TOOL_FAILURES = 8;
-    const MAX_FAILED_FILE_EDIT_ATTEMPTS = 8;
-    const fileReadEpoch = new Map<string, number>();
-    let hardLimitReached = false;
-    let failureStreakReached = false;
 
     let appliedFileEdit = false;
-    let productiveToolRounds = 0;
-    const MAX_EXTRA_RECOVERY_TURNS = MAX_FAILED_FILE_EDIT_ATTEMPTS + MAX_CONSECUTIVE_TOOL_FAILURES;
-    for (let round = 0; round < config.maxToolRounds + MAX_EXTRA_RECOVERY_TURNS + 1; round++) {
+    for (let round = 0; round <= config.maxToolRounds; round++) {
       if (signal.aborted) throw new Error('The operation was aborted.');
-      const successfulCallsAtRoundStart = successfulToolCalls;
       const requestHistory = [...this.history];
       if (contextBlock) {
         const lastUser = requestHistory.map((message, index) => ({ message, index }))
@@ -226,7 +211,7 @@ export class AgentLoop {
         return;
       }
 
-      if (productiveToolRounds >= config.maxToolRounds) {
+      if (round === config.maxToolRounds) {
         for (const toolCall of response.toolCalls) {
           this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: `Tool-round limit reached (${config.maxToolRounds}); this tool was not executed.` });
         }
@@ -240,21 +225,6 @@ export class AgentLoop {
 
       for (const toolCall of response.toolCalls) {
         if (signal.aborted) throw new Error('The operation was aborted.');
-        if (failureStreakReached) {
-          const result = `Not executed: stopped after ${MAX_CONSECUTIVE_TOOL_FAILURES} consecutive tool failures or ${MAX_FAILED_FILE_EDIT_ATTEMPTS} failed file-edit attempts. Correct the latest reported issue before requesting another operation.`;
-          this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
-          this.persistCurrentChat();
-          this.post({ type: 'toolDone', id: toolCall.id, name: toolCall.function?.name || 'unknown', status: 'failed', result });
-          continue;
-        }
-        if (successfulToolCalls >= HARD_TOOL_CALL_LIMIT) {
-          hardLimitReached = true;
-          const result = `Successful-operation limit reached (${HARD_TOOL_CALL_LIMIT}). No further tools were executed. Ask the user to continue in a new request.`;
-          this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
-          this.persistCurrentChat();
-          this.post({ type: 'toolDone', id: toolCall.id, name: toolCall.function?.name || 'unknown', result });
-          continue;
-        }
         const name = toolCall.function.name || '';
         let args: unknown;
         try {
@@ -265,30 +235,15 @@ export class AgentLoop {
           this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
           this.persistCurrentChat();
           this.post({ type: 'toolDone', id: toolCall.id, name: name || 'unknown', status: 'invalid', result });
-          consecutiveToolFailures++;
-          if (name === 'propose_file_edit') consecutiveFileEditFailures++;
-          if (consecutiveToolFailures >= MAX_CONSECUTIVE_TOOL_FAILURES ||
-              consecutiveFileEditFailures >= MAX_FAILED_FILE_EDIT_ATTEMPTS) failureStreakReached = true;
           continue;
         }
-        const editPath = name === 'propose_file_edit' && args && typeof args === 'object' &&
-          typeof (args as Record<string, unknown>).path === 'string'
-          ? ((args as Record<string, unknown>).path as string).replace(/\\/g, '/')
-          : '';
-        // A fresh read of the target file changes the evidence state for an edit.
-        // The same patch may then be retried against that new snapshot.
-        const snapshotEpoch = editPath ? (fileReadEpoch.get(editPath) ?? 0) : 0;
-        const signature = `${name}:${stableSerialize(args)}${editPath ? `:snapshot=${snapshotEpoch}` : ''}`;
+        const signature = `${name}:${stableSerialize(args)}`;
         const previous = seenCalls.get(signature);
         if (previous !== undefined) {
           const result = `Duplicate tool call blocked. This exact operation was already attempted in this request. Previous outcome: ${previous}`;
           this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
           this.persistCurrentChat();
           this.post({ type: 'toolDone', id: toolCall.id, name, status: 'invalid', result: result.slice(0, 1200) });
-          consecutiveToolFailures++;
-          if (name === 'propose_file_edit') consecutiveFileEditFailures++;
-          if (consecutiveToolFailures >= MAX_CONSECUTIVE_TOOL_FAILURES ||
-              consecutiveFileEditFailures >= MAX_FAILED_FILE_EDIT_ATTEMPTS) failureStreakReached = true;
           continue;
         }
         this.post({ type: 'toolStart', id: toolCall.id, name, args });
@@ -318,46 +273,11 @@ export class AgentLoop {
             : 'failed';
           seenCalls.set(signature, result.slice(0, 1000));
         }
-        if (resultStatus === 'success') {
-          successfulToolCalls++;
-          consecutiveToolFailures = 0;
-          if (name === 'read_file') {
-            const readPath = args && typeof args === 'object' && typeof (args as Record<string, unknown>).path === 'string'
-              ? ((args as Record<string, unknown>).path as string).replace(/\\/g, '/')
-              : '';
-            if (readPath) fileReadEpoch.set(readPath, (fileReadEpoch.get(readPath) ?? 0) + 1);
-          }
-          if (name === 'propose_file_edit') consecutiveFileEditFailures = 0;
-        } else {
-          consecutiveToolFailures++;
-          if (name === 'propose_file_edit') consecutiveFileEditFailures++;
-          if (consecutiveToolFailures >= MAX_CONSECUTIVE_TOOL_FAILURES ||
-              consecutiveFileEditFailures >= MAX_FAILED_FILE_EDIT_ATTEMPTS) failureStreakReached = true;
-        }
         this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
         this.persistCurrentChat();
         this.post({ type: 'toolDone', id: toolCall.id, name, status: resultStatus, result: result.slice(0, 1200) });
       }
-      if (successfulToolCalls > successfulCallsAtRoundStart) {
-        productiveToolRounds++;
-      }
-      if (hardLimitReached || failureStreakReached) {
-        const notice = hardLimitReached
-          ? `I stopped tool execution after ${HARD_TOOL_CALL_LIMIT} successful operations. Failed validation and patch attempts do not consume this budget. The conversation is preserved; ask me to continue.`
-          : `I stopped after ${MAX_CONSECUTIVE_TOOL_FAILURES} consecutive tool failures or ${MAX_FAILED_FILE_EDIT_ATTEMPTS} failed file-edit attempts to prevent repeated retries. The conversation is preserved. Review the latest tool error, then ask me to continue.`;
-
-        this.history.push({ role: 'assistant', content: notice });
-        this.persistCurrentChat();
-        this.post({ type: 'delta', text: `\n\n${notice}` });
-        this.post({ type: 'assistantDone' });
-        return;
-      }
     }
-    const notice = 'I stopped because the maximum recovery-turn budget was reached. The conversation and completed tool results are preserved; ask me to continue.';
-    this.history.push({ role: 'assistant', content: notice });
-    this.persistCurrentChat();
-    this.post({ type: 'delta', text: `\n\n${notice}` });
-    this.post({ type: 'assistantDone' });
   }
 
   private systemPrompt(config: NemotronAgentConfig): string {

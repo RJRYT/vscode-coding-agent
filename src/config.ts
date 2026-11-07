@@ -1,25 +1,25 @@
 import * as vscode from 'vscode';
+export { MAX_COMMAND_LENGTH, MAX_CREATE_CONTENT_CHARS, MAX_PATCH_TEXT_CHARS } from './limits';
 
 export const API_KEY_SECRET = 'nemotronAgent.nvidiaApiKey';
 export const MODEL_DEFAULT = 'nvidia/nemotron-3.5-super-vl-120b-a12b';
 export const BASE_URL_DEFAULT = 'https://integrate.api.nvidia.com/v1';
 export const MAX_TOKENS_DEFAULT = 16384;
 export const REASONING_DEFAULT = true;
-export const MAX_TOOL_ROUNDS_DEFAULT = 8;
+export const MAX_TOOL_ROUNDS_DEFAULT = 100;
 
 export const EXCLUDES =
   '**/{node_modules,.git,dist,build,out,.next,coverage,vendor}/**,**/.env*,**/*.{pem,key,p12,pfx}';
 
-export const MAX_FILE_READ_BYTES = 250_000;
-export const MAX_FILE_EDIT_BYTES = 1_000_000;
-export const MAX_FILE_REPLACE_BYTES = 1_000_000;
+export const MAX_FILE_READ_BYTES = 2 * 1024 * 1024;
+export const MAX_FILE_EDIT_BYTES = 10 * 1024 * 1024;
+export const MAX_FILE_REPLACE_BYTES = 10 * 1024 * 1024;
 export const MAX_SEARCH_FILE_BYTES = 512 * 1024;
 export const MAX_SEARCH_TOTAL_BYTES = 20 * 1024 * 1024;
 export const MAX_SEARCH_FILES = 2500;
 export const MAX_SEARCH_RESULT_LIMIT = 60;
-export const MAX_COMMAND_LENGTH = 1200;
-export const COMMAND_TIMEOUT_MS = 120_000;
-export const COMMAND_MAX_BUFFER = 1024 * 1024;
+export const COMMAND_TIMEOUT_MS = 0; // No automatic timeout; the user can stop the active request.
+export const COMMAND_MAX_BUFFER = 10 * 1024 * 1024;
 export const APPROVAL_TIMEOUT_MS = 5 * 60_000;
 
 export const MAX_CHATS = 50;

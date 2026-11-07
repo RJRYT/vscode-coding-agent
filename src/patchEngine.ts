@@ -11,72 +11,29 @@ export interface ResolvedTextPatch extends TextPatch {
 export interface PatchResult {
   text: string;
   patches: ResolvedTextPatch[];
-  matchingMode?: 'exact' | 'line-ending-normalized';
-}
-
-function normalizeWithOffsets(value: string): { text: string; offsets: number[] } {
-  let text = '';
-  const offsets: number[] = [];
-  for (let index = 0; index < value.length; index++) {
-    offsets.push(index);
-    const char = value[index];
-    if (char === '\r') {
-      text += '\n';
-      if (value[index + 1] === '\n') index++;
-    } else {
-      text += char;
-    }
-  }
-  offsets.push(value.length);
-  return { text, offsets };
-}
-
-function normalizeLineEndings(value: string): string {
-  return value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-}
-
-function preferredEol(source: string): string {
-  const crlf = (source.match(/\r\n/g) || []).length;
-  const lf = (source.match(/(?<!\r)\n/g) || []).length;
-  return crlf > lf ? '\r\n' : '\n';
-}
-
-function countOccurrences(source: string, needle: string): { first: number; count: number } {
-  let first = -1;
-  let count = 0;
-  let from = 0;
-  while (true) {
-    const index = source.indexOf(needle, from);
-    if (index < 0) break;
-    if (first < 0) first = index;
-    count++;
-    from = index + 1;
-  }
-  return { first, count };
 }
 
 /**
- * Resolve exact unique anchors against one immutable VS Code document snapshot.
- * A line-ending-only normalization fallback handles LF/CRLF differences without
- * fuzzy whitespace matching. Offsets are mapped back to the original snapshot.
+ * Resolve exact, unique text anchors against one immutable source snapshot.
+ * No fuzzy matching is used: a missing or ambiguous anchor is rejected.
  */
 export function applyExactTextPatches(source: string, changes: TextPatch[]): PatchResult {
   if (!Array.isArray(changes) || changes.length === 0) {
     throw new Error('At least one targeted edit is required.');
   }
   if (changes.length > 20) {
-    throw new Error('A single edit request may contain at most 20 targeted changes. Combine nearby changes.');
+    throw new Error('A single edit request may contain at most 20 targeted changes.');
   }
 
-  const maxAnchorBytes = 1_000_000;
-  const normalizedSource = normalizeWithOffsets(source);
-  const eol = preferredEol(source);
   const resolved: ResolvedTextPatch[] = [];
-  let usedNormalizedMatching = false;
-
   for (let index = 0; index < changes.length; index++) {
     const change = changes[index];
-    if (!change || typeof change.oldText !== 'string' || typeof change.newText !== 'string' || !change.oldText.length) {
+    if (
+      !change ||
+      typeof change.oldText !== 'string' ||
+      typeof change.newText !== 'string' ||
+      change.oldText.length === 0
+    ) {
       throw new Error(`Edit ${index + 1} must include non-empty oldText and string newText values.`);
     }
     if (change.oldText === change.newText) {
@@ -85,48 +42,32 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
     if (change.oldText.includes('\0') || change.newText.includes('\0')) {
       throw new Error(`Edit ${index + 1} contains a null byte.`);
     }
-    if (Buffer.byteLength(change.oldText, 'utf8') > maxAnchorBytes ||
-        Buffer.byteLength(change.newText, 'utf8') > maxAnchorBytes) {
-      throw new Error(`Edit ${index + 1} exceeds the 1 MB per-anchor limit.`);
+    if (change.oldText.length > 5_000_000 || change.newText.length > 5_000_000) {
+      throw new Error(`Edit ${index + 1} exceeds the 5 MB text limit. Split the change into smaller edits if necessary.`);
     }
+    // An exact full-snapshot replacement is safe: it is still anchored to the
+    // complete current contents and the caller revalidates the snapshot after approval.
 
-    let start = -1;
-    let end = -1;
-    const exact = countOccurrences(source, change.oldText);
-    if (exact.count === 1) {
-      start = exact.first;
-      end = start + change.oldText.length;
-    } else if (exact.count > 1) {
+    const start = source.indexOf(change.oldText);
+    if (start < 0) {
       throw new Error(
-        `Edit ${index + 1} is ambiguous: its oldText occurs ${exact.count} times. Include a few more surrounding lines so the anchor is unique.`
+        `Edit ${index + 1} could not be matched exactly. Read the latest file contents and retry with an exact anchor.`
       );
-    } else {
-      const normalizedAnchor = normalizeLineEndings(change.oldText);
-      const normalized = countOccurrences(normalizedSource.text, normalizedAnchor);
-      if (normalized.count === 1) {
-        start = normalizedSource.offsets[normalized.first];
-        end = normalizedSource.offsets[normalized.first + normalizedAnchor.length];
-        usedNormalizedMatching = true;
-      } else if (normalized.count > 1) {
-        throw new Error(
-          `Edit ${index + 1} is ambiguous after line-ending normalization. Include more surrounding lines so the anchor is unique.`
-        );
-      } else {
-        throw new Error(
-          `Edit ${index + 1} could not be matched in the current VS Code document. The file may have changed since it was read, or indentation/content differs. Read the file again and use an exact, distinctive snippet copied from the latest editor content. Line-ending differences (LF/CRLF) are handled automatically; other whitespace is intentionally not guessed.`
-        );
-      }
+    }
+    const second = source.indexOf(change.oldText, start + 1);
+    if (second >= 0) {
+      throw new Error(
+        `Edit ${index + 1} is ambiguous because its oldText occurs more than once. Include more surrounding context so it matches exactly once.`
+      );
     }
 
-    // Preserve the file's existing line-ending convention in inserted text.
-    const newText = normalizeLineEndings(change.newText).replace(/\n/g, eol);
-    resolved.push({ oldText: source.slice(start, end), newText, start, end });
+    resolved.push({ ...change, start, end: start + change.oldText.length });
   }
 
   const ordered = [...resolved].sort((a, b) => a.start - b.start);
   for (let index = 1; index < ordered.length; index++) {
     if (ordered[index].start < ordered[index - 1].end) {
-      throw new Error('Two proposed edits overlap. Combine overlapping changes into one edit or use separate non-overlapping anchors.');
+      throw new Error('Two proposed edits overlap. Combine them into one targeted edit or adjust their anchors.');
     }
   }
 
@@ -135,7 +76,7 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
     text = text.slice(0, patch.start) + patch.newText + text.slice(patch.end);
   }
 
-  return { text, patches: ordered, ...(usedNormalizedMatching ? { matchingMode: 'line-ending-normalized' as const } : {}) };
+  return { text, patches: ordered };
 }
 
 export function createPatchPreview(patches: ResolvedTextPatch[], maxChars = 12_000): {

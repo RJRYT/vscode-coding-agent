@@ -6,6 +6,8 @@ import {
   MAX_FILE_READ_BYTES,
   MAX_FILE_EDIT_BYTES,
   MAX_FILE_REPLACE_BYTES,
+  MAX_CREATE_CONTENT_CHARS,
+  MAX_COMMAND_LENGTH,
   MAX_SEARCH_FILE_BYTES,
   MAX_SEARCH_TOTAL_BYTES,
   MAX_SEARCH_FILES,
@@ -121,7 +123,7 @@ export class ToolRegistry {
         function: {
           name: 'propose_file_edit',
           description:
-            'Propose a SAFE edit to an existing workspace file. Read the latest file first; read_file returns the live VS Code document including unsaved changes. Prefer small, unique oldText anchors and keep edits non-overlapping. LF/CRLF differences are normalized safely, but other whitespace is not guessed. Use a full-file oldText snapshot only as a last resort when you have just read that exact file snapshot; it still requires explicit approval and stale-state verification. To create a new file only, use createContent.',
+            'Propose an edit to an existing workspace file using exact text anchors. Read the latest file first. Each oldText must match exactly once; it may be a focused section or the complete current file snapshot for a deliberate full-file rewrite. Large edits are supported up to 5 million characters per anchor. To create a new file only, use createContent.',
           parameters: {
             type: 'object',
             properties: {
@@ -131,17 +133,17 @@ export class ToolRegistry {
                 type: 'array',
                 minItems: 1,
                 maxItems: 20,
-                description: 'Exact replacements for an existing file. Prefer focused unique anchors; full-file snapshot replacement is allowed only as a last resort and still requires approval.',
+                description: 'Exact replacements for an existing file. Use focused anchors where practical; a full-file oldText is allowed only when it exactly matches the current file snapshot.',
                 items: {
                   type: 'object',
                   properties: {
-                    oldText: { type: 'string', description: 'Exact existing snippet including enough surrounding context to occur exactly once.' },
-                    newText: { type: 'string', description: 'Replacement snippet. Preserve all unchanged code inside the anchor.' },
+                    oldText: { type: 'string', maxLength: 5000000, description: 'Exact existing snippet including enough surrounding context to occur exactly once; up to 5 million characters.' },
+                    newText: { type: 'string', maxLength: 5000000, description: 'Replacement text. May be large (up to 5 million characters); preserve unrelated content unless intentionally rewriting the full file.' },
                   },
                   required: ['oldText', 'newText'],
                 },
               },
-              createContent: { type: 'string', description: 'Complete content for a brand-new file only. Never use this for an existing file.' },
+              createContent: { type: 'string', maxLength: 10000000, description: 'Complete content for a brand-new file only. Existing files must use edits with exact oldText anchors; up to 10 million characters.' },
             },
             required: ['path', 'summary'],
           },
@@ -152,10 +154,10 @@ export class ToolRegistry {
         function: {
           name: 'run_terminal_command',
           description:
-            'Propose a shell command to run in the workspace root. The user must approve it. Use for tests, builds, lint, or type checks only; do not use terminal commands to install packages or edit source files.',
+            'Propose a shell command or multiline shell script to run in the workspace root. The user must approve the exact command before execution. Shell pipes, chaining, redirection, subshells and ordinary development commands are supported. Commands run with the current user permissions in a trusted workspace; do not expose secrets or perform destructive actions unless explicitly requested by the user.',
           parameters: {
             type: 'object',
-            properties: { command: { type: 'string' }, reason: { type: 'string' } },
+            properties: { command: { type: 'string', maxLength: 20000 }, reason: { type: 'string' } },
             required: ['command', 'reason'],
           },
         },
@@ -182,33 +184,19 @@ export class ToolRegistry {
     if (!root) throw new Error('No workspace folder is open.');
     const uri = safeUri(relativePath, root);
     await assertPathInsideWorkspace(uri, root);
-    const openDocument = vscode.workspace.textDocuments.find(
-      (candidate) => candidate.uri.toString() === uri.toString()
-    );
-    if (!openDocument) {
-      const stat = await vscode.workspace.fs.stat(uri);
-      if (stat.size > MAX_FILE_READ_BYTES) {
-        throw new Error(
-          'File is larger than 250 KB. Open it in the editor and attach the relevant selection, or search for a smaller section.'
-        );
-      }
-      const bytes = await vscode.workspace.fs.readFile(uri);
-      if (bytes.includes(0)) {
-        throw new Error(
-          'This appears to be a binary file. Binary file reading is not supported yet.'
-        );
-      }
+    const bytes = await vscode.workspace.fs.readFile(uri);
+    if (bytes.byteLength > MAX_FILE_READ_BYTES) {
+      throw new Error(
+        'File is larger than 2 MB. Inspect a relevant section in the editor or use workspace search to narrow the content.'
+      );
     }
-    // Use the live VS Code document so read_file and propose_file_edit share
-    // the same snapshot, including unsaved editor changes.
-    const document = openDocument ?? await vscode.workspace.openTextDocument(uri);
-    const text = document.getText();
-    if (Buffer.byteLength(text, 'utf8') > MAX_FILE_READ_BYTES) {
-      throw new Error('The live editor document exceeds the 250 KB read limit. Attach a smaller selection instead.');
+    if (bytes.includes(0)) {
+      throw new Error(
+        'This appears to be a binary file. Binary file reading is not supported yet.'
+      );
     }
-    return {
-      content: `--- ${relativePath} ---\nSnapshot: VS Code document version ${document.version}${document.isDirty ? ' (contains unsaved editor changes)' : ' (saved document)'}\nLine endings are preserved.\n\n${text}`,
-    };
+    const text = Buffer.from(bytes).toString('utf8');
+    return { content: `--- ${relativePath} ---\n${text}` };
   }
 
   getActiveEditorContext(): ToolResult {
@@ -336,8 +324,8 @@ export class ToolRegistry {
       if (Array.isArray(edits) && edits.length) {
         throw new Error('A new file must use createContent; targeted edits are only for existing files.');
       }
-      if (createContent.length > MAX_FILE_EDIT_BYTES || createContent.includes('\0')) {
-        throw new Error('New file content is too large or contains binary data.');
+      if (createContent.length > MAX_CREATE_CONTENT_CHARS || Buffer.byteLength(createContent, 'utf8') > MAX_FILE_EDIT_BYTES || createContent.includes('\0')) {
+        throw new Error('New file content exceeds the 10 MB limit or contains binary data.');
       }
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const approved = await this.requestApproval({
@@ -409,13 +397,13 @@ export class ToolRegistry {
     const originalDiskBytes = Buffer.from(await vscode.workspace.fs.readFile(uri));
     const originalVersion = document.version;
     if (Buffer.byteLength(originalText, 'utf8') > MAX_FILE_REPLACE_BYTES) {
-      throw new Error('Refusing to edit a file larger than 1 MB.');
+      throw new Error('Refusing to edit a file larger than 10 MB.');
     }
     if (originalText.includes('\0')) throw new Error('Refusing to edit a binary file.');
 
     const patchResult = applyExactTextPatches(originalText, edits);
     if (Buffer.byteLength(patchResult.text, 'utf8') > MAX_FILE_EDIT_BYTES) {
-      throw new Error('The resulting file would exceed 1 MB. Split the change into smaller files.');
+      throw new Error('The resulting file would exceed the 10 MB edit limit. Split the change into smaller files.');
     }
     const preview = createPatchPreview(patchResult.patches);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -517,7 +505,7 @@ export class ToolRegistry {
 
   async runCommand(command: string, reason: string, signal?: AbortSignal): Promise<ToolResult> {
     if (typeof command !== 'string' || !command.trim()) throw new Error('Command is empty.');
-    if (command.length > 1200) throw new Error('Command is too long.');
+    if (command.length > MAX_COMMAND_LENGTH) throw new Error(`Command exceeds the ${MAX_COMMAND_LENGTH.toLocaleString()} character limit.`);
     validateCommand(command);
 
     const root = vscode.workspace.workspaceFolders?.[0]?.uri;
