@@ -58,6 +58,26 @@ function normalizeEdit(item: ToolArguments, index: number, inherited?: string): 
   return { oldText, newText };
 }
 
+function parseEditCollection(value: unknown, args: ToolArguments): unknown {
+  if (typeof value !== 'string') return value;
+  let candidate = value.trim();
+  candidate = candidate.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (typeof parsed === 'string') { candidate = parsed.trim(); continue; }
+      return parsed;
+    } catch {
+      // Some OpenAI-compatible gateways double-encode the value or emit a
+      // single edit at the top level alongside an unusable `edits` field.
+      if (OLD_KEYS.some((key) => typeof args[key] === 'string')) return undefined;
+      break;
+    }
+  }
+  if (OLD_KEYS.some((key) => typeof args[key] === 'string')) return undefined;
+  throw new Error(`Invalid edits payload: expected a JSON array or object containing oldText and newText. Received string preview: ${candidate.slice(0, 160)}`);
+}
+
 function optionalGlob(args: ToolArguments): string | undefined {
   const explicit = firstString(args, ['glob'], 500);
   if (explicit !== undefined) return explicit;
@@ -130,10 +150,10 @@ export function validateToolArguments(name: string, value: unknown): ValidatedTo
       const summary = firstString(args,SUMMARY_KEYS,2000) || 'File change proposed by Nemotron';
       let rawEdits: unknown = args.edits;
       let rawContent: unknown = args.createContent;
-      if (typeof rawEdits === 'string') {
-        try { rawEdits = JSON.parse(rawEdits); } catch { throw new Error('edits must be a JSON array or edit object.'); }
-      }
-      if (isRecord(rawEdits)) rawEdits = [rawEdits];
+      rawEdits = parseEditCollection(rawEdits, args);
+      if (isRecord(rawEdits) && Array.isArray(rawEdits.edits)) rawEdits = rawEdits.edits;
+      else if (isRecord(rawEdits) && isRecord(rawEdits.edit)) rawEdits = [rawEdits.edit];
+      else if (isRecord(rawEdits)) rawEdits = [rawEdits];
       if (rawContent === null) rawContent = undefined;
       if (Array.isArray(rawEdits) && rawEdits.length === 0 && typeof rawContent !== 'string') rawEdits = undefined;
       // Normalize the frequent single-edit shape: {path, oldText, newText}.

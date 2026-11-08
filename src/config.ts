@@ -39,6 +39,7 @@ export interface NemotronAgentConfig {
   codeStyle: string;
   memoryEnabled: boolean;
   autoSaveChats: boolean;
+  autoMode: boolean;
 }
 
 export interface PersonalizationConfig {
@@ -65,6 +66,7 @@ export function getNemotronAgentConfig(): NemotronAgentConfig {
     codeStyle: config.get<string>('codeStyle', 'follow project conventions'),
     memoryEnabled: config.get<boolean>('memoryEnabled', true),
     autoSaveChats: config.get<boolean>('autoSaveChats', true),
+    autoMode: config.get<boolean>('autoMode', false),
   };
 }
 

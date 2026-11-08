@@ -172,3 +172,28 @@ describe('expanded workspace and Git tool contracts', () => {
       .toBe('run_terminal_command');
   });
 });
+
+it('normalizes JSON-stringified, double-encoded, and fenced edit collections', () => {
+  const edit = { oldText: 'before', newText: 'after' };
+  for (const edits of [
+    JSON.stringify([edit]),
+    JSON.stringify(JSON.stringify([edit])),
+    `\`\`\`json\n${JSON.stringify([edit])}\n\`\`\``,
+    edit,
+  ]) {
+    expect(validateToolArguments('propose_file_edit', { path: 'src/a.ts', edits }))
+      .toMatchObject({ args: { edits: [{ oldText: 'before', newText: 'after' }] } });
+  }
+});
+
+it('falls back to top-level edit anchors when a gateway sends an unusable edits field', () => {
+  expect(validateToolArguments('propose_file_edit', {
+    path: 'src/a.ts', edits: '[malformed gateway payload', oldText: 'before', newText: 'after',
+  })).toMatchObject({ args: { edits: [{ oldText: 'before', newText: 'after' }] } });
+});
+
+it('reports malformed edits with a useful payload preview when no fallback exists', () => {
+  expect(() => validateToolArguments('propose_file_edit', {
+    path: 'src/a.ts', edits: '[malformed gateway payload',
+  })).toThrow(/Invalid edits payload.*malformed gateway payload/);
+});

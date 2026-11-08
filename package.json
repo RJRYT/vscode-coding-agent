@@ -1,8 +1,8 @@
 {
   "name": "nemotron-coding-agent",
   "displayName": "Nemotron Coding Agent",
-  "description": "A workspace-aware coding agent powered by NVIDIA Nemotron. Review and approve file edits and terminal commands.",
-  "version": "0.2.24",
+  "description": "A workspace-aware coding agent powered by NVIDIA Nemotron, with optional Auto mode and granular command permissions.",
+  "version": "0.2.25",
   "icon": "media/extension-icon.png",
   "publisher": "rjryt",
   "license": "SEE LICENSE IN LICENSE",
@@ -158,6 +158,11 @@
           "type": "boolean",
           "default": true,
           "description": "Save conversation history to this workspace so you can return to earlier chats."
+        },
+        "nemotronAgent.autoMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Grant full tool permission without approval prompts for workspace file operations, terminal commands, and Git mutations. Workspace trust and safety restrictions remain active."
         }
       }
     }

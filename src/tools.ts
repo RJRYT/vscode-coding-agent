@@ -29,6 +29,8 @@ export interface ToolResult {
   status?: 'success' | 'failed' | 'rejected' | 'timeout' | 'cancelled' | 'invalid' | 'unsupported' | 'stale';
 }
 
+export type ApprovalDecision = 'allow' | 'allowOnce' | 'cancel';
+
 export type AskApproval = (payload: {
   id: string;
   kind: 'file' | 'command';
@@ -40,7 +42,7 @@ export type AskApproval = (payload: {
   command?: string;
   patchCount?: number;
   diff?: string;
-}, signal?: AbortSignal) => Promise<boolean>;
+}, signal?: AbortSignal) => Promise<ApprovalDecision>;
 
 export interface EditProgress {
   id: string;
@@ -57,7 +59,8 @@ export class ToolRegistry {
   constructor(
     askApproval: AskApproval,
     private readonly onEditProgress?: (progress: EditProgress) => void,
-    private readonly logger?: AgentLogger
+    private readonly logger?: AgentLogger,
+    private readonly isAutoMode: () => boolean = () => false
   ) {
     this.askApproval = askApproval;
   }
@@ -203,10 +206,10 @@ export class ToolRegistry {
         function: {
           name,
           description: name === 'create_folder'
-            ? 'Create a new workspace folder (including missing parent folders). Requires user approval.'
+            ? 'Create a new workspace folder (including missing parent folders). Requires approval unless Auto mode is enabled.'
             : name === 'delete_file'
-              ? 'Delete a workspace file using the operating-system trash when supported. Requires user approval.'
-              : 'Recursively delete a workspace folder using the operating-system trash when supported. Never target the workspace root. Requires user approval.',
+              ? 'Delete a workspace file using the operating-system trash when supported. Requires approval unless Auto mode is enabled.'
+              : 'Recursively delete a workspace folder using the operating-system trash when supported. Never target the workspace root. Requires approval unless Auto mode is enabled.',
           parameters: {
             type: 'object',
             properties: {
@@ -222,7 +225,7 @@ export class ToolRegistry {
         type: 'function',
         function: {
           name: 'git_manager',
-          description: 'Manage Git safely. Read actions: status, diff, diff_staged, log, branch_list, remote_list, tag_list, show, stash_list, blame. Mutating actions require approval: stage, unstage, commit, push, pull, fetch, branch_create, branch_switch, branch_delete, branch_rename, merge, merge_abort, stash, stash_pop, stash_apply, stash_drop, tag_create, tag_delete, remote_add, remote_remove, remote_set_url, remote_prune, tag_push, push_tags, rebase, rebase_abort, cherry_pick, revert, reset_soft, reset_mixed, reset_hard, clean_preview, clean, worktree_list, worktree_add, worktree_remove, init. Use paths for file-scoped actions, branch/newBranch for branch actions, message for commit/stash/tag messages, remote/url for remote actions, ref for show/stash/tag references. Git arguments are passed without a shell.',
+          description: 'Manage Git safely. Read actions: status, diff, diff_staged, log, branch_list, remote_list, tag_list, show, stash_list, blame. Mutating actions require approval unless Auto mode is enabled: stage, unstage, commit, push, pull, fetch, branch_create, branch_switch, branch_delete, branch_rename, merge, merge_abort, stash, stash_pop, stash_apply, stash_drop, tag_create, tag_delete, remote_add, remote_remove, remote_set_url, remote_prune, tag_push, push_tags, rebase, rebase_abort, cherry_pick, revert, reset_soft, reset_mixed, reset_hard, clean_preview, clean, worktree_list, worktree_add, worktree_remove, init. Use paths for file-scoped actions, branch/newBranch for branch actions, message for commit/stash/tag messages, remote/url for remote actions, ref for show/stash/tag references. Git arguments are passed without a shell.',
           parameters: {
             type: 'object',
             properties: {
@@ -248,7 +251,7 @@ export class ToolRegistry {
         function: {
           name: 'run_terminal_command',
           description:
-            'Propose a shell command or multiline shell script to run in the workspace root. The user must approve the exact command before execution. Shell pipes, chaining, redirection, subshells and ordinary development commands are supported. Commands run with the current user permissions in a trusted workspace; do not expose secrets or perform destructive actions unless explicitly requested by the user.',
+            'Propose a shell command or multiline shell script to run in the workspace root. The user must approve the exact command before execution unless Auto mode is enabled. Shell pipes, chaining, redirection, subshells and ordinary development commands are supported. Commands run with the current user permissions in a trusted workspace; do not expose secrets or perform destructive actions unless explicitly requested by the user.',
           parameters: {
             type: 'object',
             properties: { command: { type: 'string', maxLength: 20000 }, reason: { type: 'string' }, description: { type: 'string' }, path: { type: 'string', description: 'Optional workspace-relative working directory.' }, limit: { type: 'integer' }, offset: { type: 'integer' } },
@@ -268,9 +271,9 @@ export class ToolRegistry {
     try { await vscode.workspace.fs.stat(uri); throw new Error(`The folder path already exists: ${relativePath}.`); }
     catch (error: unknown) { if (!isFileNotFound(error)) throw error; }
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const approved = await this.requestApproval({ id, kind: 'file', title: `Create folder ${relativePath}`, summary: summary || 'Create workspace folder', path: relativePath, oldPreview: '(does not exist)', newPreview: `Directory: ${relativePath}` }, signal);
-    if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for folder-creation approval.');
-    if (!approved) return { content: `User rejected folder creation: ${relativePath}. Do not retry the same operation.`, status: 'rejected' };
+    const decision = await this.requestApproval({ id, kind: 'file', title: `Create folder ${relativePath}`, summary: summary || 'Create workspace folder', path: relativePath, oldPreview: '(does not exist)', newPreview: `Directory: ${relativePath}` }, signal);
+    if (decision === 'cancel' && signal?.aborted) throw new Error('Request cancelled while waiting for folder-creation approval.');
+    if (decision === 'cancel') return { content: `User cancelled folder creation: ${relativePath}. Do not retry the same operation.`, status: 'cancelled' };
     if (signal?.aborted) throw new Error('Request cancelled before folder creation.');
     await assertPathInsideWorkspace(uri, root);
     try { await vscode.workspace.fs.stat(uri); throw new Error(`The path appeared while approval was pending: ${relativePath}. Nothing was created.`); }
@@ -291,9 +294,9 @@ export class ToolRegistry {
     const before = await vscode.workspace.fs.stat(uri);
     if (before.type & vscode.FileType.Directory) throw new Error('The target is a directory. Use delete_folder instead.');
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const approved = await this.requestApproval({ id, kind: 'file', title: `Delete file ${relativePath}`, summary: summary || 'Delete workspace file', path: relativePath, oldPreview: `File: ${relativePath}\nSize: ${before.size} bytes`, newPreview: '(file moved to trash, when supported)' }, signal);
-    if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for file-deletion approval.');
-    if (!approved) return { content: `User rejected deletion of ${relativePath}. Do not retry the same operation.`, status: 'rejected' };
+    const decision = await this.requestApproval({ id, kind: 'file', title: `Delete file ${relativePath}`, summary: summary || 'Delete workspace file', path: relativePath, oldPreview: `File: ${relativePath}\nSize: ${before.size} bytes`, newPreview: '(file moved to trash, when supported)' }, signal);
+    if (decision === 'cancel' && signal?.aborted) throw new Error('Request cancelled while waiting for file-deletion approval.');
+    if (decision === 'cancel') return { content: `User cancelled deletion of ${relativePath}. Do not retry the same operation.`, status: 'cancelled' };
     if (signal?.aborted) throw new Error('Request cancelled before file deletion.');
     await assertPathInsideWorkspace(uri, root);
     const current = await vscode.workspace.fs.stat(uri);
@@ -318,9 +321,9 @@ export class ToolRegistry {
     if (sensitiveEntries.length) throw new Error(`Folder deletion is blocked because it contains protected secret paths: ${sensitiveEntries.slice(0, 10).join(', ')}.`);
     const preview = inventory.entries.slice(0, 80).join('\n') || '(empty folder)';
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const approved = await this.requestApproval({ id, kind: 'file', title: `Delete folder ${relativePath}`, summary: summary || 'Recursively delete workspace folder', path: relativePath, oldPreview: `${inventory.files} files, ${inventory.directories} subfolders\n${preview}${inventory.entries.length > 80 ? '\n… additional entries omitted …' : ''}`, newPreview: '(entire folder moved to trash, when supported)' }, signal);
-    if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for folder-deletion approval.');
-    if (!approved) return { content: `User rejected deletion of folder ${relativePath}. Do not retry the same operation.`, status: 'rejected' };
+    const decision = await this.requestApproval({ id, kind: 'file', title: `Delete folder ${relativePath}`, summary: summary || 'Recursively delete workspace folder', path: relativePath, oldPreview: `${inventory.files} files, ${inventory.directories} subfolders\n${preview}${inventory.entries.length > 80 ? '\n… additional entries omitted …' : ''}`, newPreview: '(entire folder moved to trash, when supported)' }, signal);
+    if (decision === 'cancel' && signal?.aborted) throw new Error('Request cancelled while waiting for folder-deletion approval.');
+    if (decision === 'cancel') return { content: `User cancelled deletion of folder ${relativePath}. Do not retry the same operation.`, status: 'cancelled' };
     if (signal?.aborted) throw new Error('Request cancelled before folder deletion.');
     await assertPathInsideWorkspace(uri, root);
     const current = await vscode.workspace.fs.stat(uri);
@@ -446,9 +449,9 @@ export class ToolRegistry {
     }
     const display = `git ${args.map((arg) => /\s/.test(arg) ? JSON.stringify(arg) : arg).join(' ')}`;
     if (mutating) {
-      const approved = await this.requestApproval({ id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, kind: 'command', title: `Approve Git: ${action}`, summary: input.message || reason, command: display }, signal);
-      if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for Git approval.');
-      if (!approved) return { content: `User rejected Git action ${action}. Do not retry it.`, status: 'rejected' };
+      const decision = await this.requestApproval({ id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, kind: 'command', title: `Approve Git: ${action}`, summary: input.message || reason, command: display }, signal);
+      if (decision === 'cancel' && signal?.aborted) throw new Error('Request cancelled while waiting for Git approval.');
+      if (decision === 'cancel') return { content: `User cancelled Git action ${action}. Do not retry it.`, status: 'cancelled' };
       if (signal?.aborted) throw new Error('Request cancelled before Git operation.');
     }
     try {
@@ -677,7 +680,7 @@ export class ToolRegistry {
         throw new Error('New file content exceeds the 50 MB limit or contains binary data.');
       }
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const approved = await this.requestApproval({
+      const decision = await this.requestApproval({
         id,
         kind: 'file',
         title: `Create ${relativePath}`,
@@ -688,9 +691,9 @@ export class ToolRegistry {
         diff: createUnifiedDiff('', createContent),
         patchCount: 1,
       }, signal);
-      if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for file-creation approval.');
-      if (!approved) {
-        return { content: `User rejected the creation of ${relativePath}. Do not retry the same change.`, status: 'rejected' };
+      if (decision === 'cancel' && signal?.aborted) throw new Error('Request cancelled while waiting for file-creation approval.');
+      if (decision === 'cancel') {
+        return { content: `User cancelled the creation of ${relativePath}. Do not retry the same change.`, status: 'cancelled' };
       }
       if (signal?.aborted) throw new Error('Request cancelled before the approved file creation could be applied.');
       let createdByAgent = false;
@@ -755,7 +758,7 @@ export class ToolRegistry {
     }
     const preview = createPatchPreview(patchResult.patches);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const approved = await this.requestApproval({
+    const decision = await this.requestApproval({
       id,
       kind: 'file',
       title: `Apply ${patchResult.patches.length} targeted edit${patchResult.patches.length === 1 ? '' : 's'} to ${relativePath}`,
@@ -766,9 +769,9 @@ export class ToolRegistry {
       diff: createUnifiedDiff(preview.oldPreview, preview.newPreview),
       patchCount: patchResult.patches.length,
     }, signal);
-    if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for patch approval.');
-    if (!approved) {
-      return { content: `User rejected the targeted patch for ${relativePath}. Do not retry the same change.`, status: 'rejected' };
+    if (decision === 'cancel' && signal?.aborted) throw new Error('Request cancelled while waiting for patch approval.');
+    if (decision === 'cancel') {
+      return { content: `User cancelled the targeted patch for ${relativePath}. Do not retry the same change.`, status: 'cancelled' };
     }
     if (signal?.aborted) throw new Error('Request cancelled before the approved patch could be applied.');
 
@@ -842,8 +845,12 @@ export class ToolRegistry {
     }
   }
 
-  private requestApproval(payload: Parameters<AskApproval>[0], signal?: AbortSignal): Promise<boolean> {
-    if (signal?.aborted) return Promise.reject(new Error('Request cancelled while waiting for approval.'));
+  private requestApproval(payload: Parameters<AskApproval>[0], signal?: AbortSignal): Promise<ApprovalDecision> {
+    if (signal?.aborted) return Promise.resolve('cancel');
+    // Auto mode is the user's explicit full-permission choice: bypass every
+    // approval card, while retaining workspace trust, path validation, secret
+    // protections, command validation, and destructive-operation safeguards.
+    if (this.isAutoMode()) return Promise.resolve('allowOnce');
     return this.askApproval(payload, signal);
   }
 
@@ -860,19 +867,19 @@ export class ToolRegistry {
     if (!root) throw new Error('No workspace folder is open.');
     if (!vscode.workspace.isTrusted) throw new Error('Terminal execution is disabled in an untrusted workspace. Trust this workspace first.');
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const approved = await this.requestApproval({
+    const decision = await this.requestApproval({
       id,
       kind: 'command',
       title: 'Run terminal command',
       summary: reason || 'Command proposed by Nemotron',
       command,
     }, signal);
-    if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for command approval.');
-    if (!approved) {
+    if (decision === 'cancel' && signal?.aborted) throw new Error('Request cancelled while waiting for command approval.');
+    if (decision === 'cancel') {
       return {
         content:
-          'User rejected the terminal command. Do not retry it; continue without running it or explain the limitation.',
-        status: 'rejected',
+          'User cancelled the terminal command. Do not retry it; continue without running it or explain the limitation.',
+        status: 'cancelled',
       };
     }
     if (signal?.aborted) throw new Error('Request cancelled before the approved terminal command could start.');

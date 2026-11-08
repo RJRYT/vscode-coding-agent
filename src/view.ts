@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { API_KEY_SECRET, getNemotronAgentConfig } from './config';
 import { AgentLoop } from './agent';
 import { ToolRegistry } from './tools';
-import type { AskApproval } from './tools';
+import type { AskApproval, ApprovalDecision } from './tools';
 import { ChatStore } from './storage';
 import type { ApprovalPayload } from './config';
 import { isWebviewMessage } from './protocol';
@@ -39,7 +39,8 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
     const askApproval: AskApproval = (payload, signal) => this.askApproval(payload, signal);
 
     this.tools = new ToolRegistry(askApproval, (progress) =>
-      this.post({ type: 'editProgress', ...progress }), this.logger
+      this.post({ type: 'editProgress', ...progress }), this.logger,
+      () => getNemotronAgentConfig().autoMode
     );
     this.agent = new AgentLoop(this.context, this.tools, (message) => this.post(message));
 
@@ -88,6 +89,7 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
             persona: config.persona,
             memoryEnabled: config.memoryEnabled,
             autoSaveChats: config.autoSaveChats,
+            autoMode: config.autoMode,
             model: config.model,
             baseUrl: config.baseUrl,
             maxTokens: config.maxTokens,
@@ -177,12 +179,11 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         }
         break;
       }
-      case 'approve': {
-        this.resolveApproval(String(message.id), true);
-        break;
-      }
-      case 'reject': {
-        this.resolveApproval(String(message.id), false);
+      case 'approvalAction': {
+        const action = message.action;
+        if (action === 'allow' || action === 'allowOnce' || action === 'cancel') {
+          await this.resolveApproval(String(message.id), action);
+        }
         break;
       }
       case 'newChat': {
@@ -290,6 +291,20 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         this.post({ type: 'chatsUpdated', chats: this.store.listChats() });
         break;
       }
+      case 'clearAllowedCommands': {
+        await this.context.globalState.update('nemotronAgent.allowedCommands', []);
+        this.post({ type: 'status', text: 'Remembered command permissions cleared.' });
+        break;
+      }
+      case 'toggleAutoMode': {
+        const cfg = vscode.workspace.getConfiguration('nemotronAgent');
+        const enabled = !!message.enabled;
+        await cfg.update('autoMode', enabled, true);
+        const config = getNemotronAgentConfig();
+        this.post({ type: 'configUpdated', config: { autoMode: config.autoMode } });
+        this.post({ type: 'status', text: enabled ? 'Auto mode enabled · workspace file operations will not ask for approval. Terminal and Git mutations still require approval.' : 'Auto mode disabled · workspace file operations require approval.' });
+        break;
+      }
       case 'toggleMemory': {
         const cfg = vscode.workspace.getConfiguration('nemotronAgent');
         await cfg.update('memoryEnabled', !!message.enabled, true);
@@ -305,21 +320,32 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
     }
   }
 
-  private askApproval(payload: ApprovalPayload, signal?: AbortSignal): Promise<boolean> {
+  private commandPermissionKey(payload: ApprovalPayload): string | undefined {
+    if (payload.kind !== 'command' || !payload.command) return undefined;
+    const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    return createHash('sha256').update(`${workspace}\0${payload.command}`).digest('hex');
+  }
+
+  private async askApproval(payload: ApprovalPayload, signal?: AbortSignal): Promise<ApprovalDecision> {
+    if (signal?.aborted) return 'cancel';
+    const permissionKey = this.commandPermissionKey(payload);
+    if (permissionKey) {
+      const allowed = this.context.globalState.get<string[]>('nemotronAgent.allowedCommands', []);
+      if (allowed.includes(permissionKey)) return 'allow';
+    }
     return new Promise((resolve) => {
-      if (signal?.aborted) { resolve(false); return; }
       const timeout = setTimeout(() => {
         const pending = this.pending.get(payload.id);
         if (pending?.onAbort && pending.signal) pending.signal.removeEventListener('abort', pending.onAbort);
         this.pending.delete(payload.id);
-        resolve(false);
+        resolve('cancel');
         this.post({ type: 'approvalExpired', id: payload.id });
       }, 5 * 60_000);
       const onAbort = () => {
         clearTimeout(timeout);
         this.pending.delete(payload.id);
         this.post({ type: 'approvalCancelled', id: payload.id });
-        resolve(false);
+        resolve('cancel');
       };
       signal?.addEventListener('abort', onAbort, { once: true });
       this.pending.set(payload.id, { resolve, timeout, payload, signal, onAbort });
@@ -327,14 +353,29 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
     });
   }
 
-  private resolveApproval(id: string, approved: boolean): void {
+  private async resolveApproval(id: string, decision: ApprovalDecision): Promise<void> {
     const pending = this.pending.get(id);
     if (!pending) return;
     clearTimeout(pending.timeout);
     if (pending.onAbort && pending.signal) pending.signal.removeEventListener('abort', pending.onAbort);
     this.pending.delete(id);
-    pending.resolve(approved);
-    this.post({ type: 'approvalResolved', id, approved });
+    let resolvedDecision = decision;
+    if (decision === 'allow') {
+      const key = this.commandPermissionKey(pending.payload);
+      if (key) {
+        const allowed = this.context.globalState.get<string[]>('nemotronAgent.allowedCommands', []);
+        if (!allowed.includes(key)) {
+          try {
+            await this.context.globalState.update('nemotronAgent.allowedCommands', [...allowed, key].slice(-500));
+          } catch {
+            resolvedDecision = 'allowOnce';
+            this.post({ type: 'status', text: 'Could not save the remembered permission; this command is allowed once only.' });
+          }
+        }
+      }
+    }
+    pending.resolve(resolvedDecision);
+    this.post({ type: 'approvalResolved', id, approved: resolvedDecision !== 'cancel', decision: resolvedDecision });
   }
 
   private getHtml(): string {

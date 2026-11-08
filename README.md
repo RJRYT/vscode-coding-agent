@@ -164,8 +164,15 @@ This release extracts the webview and engineering prompt into runtime resources,
 
 ## Workspace and Git tools (0.2.24)
 
-Nemotron Agent includes dedicated workspace lifecycle tools for creating folders, deleting files, and recursively deleting folders. Destructive actions show an approval request before execution; deletion is workspace-scoped, refuses the workspace root, and uses the VS Code trash option when supported.
+Nemotron Agent includes dedicated workspace lifecycle tools for creating folders, deleting files, and recursively deleting folders. Destructive actions show an approval request before execution unless full Auto mode is enabled; deletion is workspace-scoped, refuses the workspace root, and uses the VS Code trash option when supported.
 
-The Git manager supports status, unstaged/staged diffs, history, branch listing/creation/switching/deletion/renaming, staging/unstaging, commits, push/pull/fetch, merge/rebase/cherry-pick/revert, soft/mixed/hard reset, stash operations, tags, remote management, blame, worktrees, clean previews, and repository initialization. Read-only actions run directly; mutating actions require approval. Destructive `reset_hard` and `clean` require an explicit `force: true`; force push uses `--force-with-lease`. Git is invoked with argument arrays (not through a shell), remote URLs containing embedded credentials are rejected, and diff/stage operations exclude protected secret paths by default.
+The Git manager supports status, unstaged/staged diffs, history, branch listing/creation/switching/deletion/renaming, staging/unstaging, commits, push/pull/fetch, merge/rebase/cherry-pick/revert, soft/mixed/hard reset, stash operations, tags, remote management, blame, worktrees, clean previews, and repository initialization. Read-only actions run directly; mutating actions require approval unless full Auto mode is enabled. Destructive `reset_hard` and `clean` require an explicit `force: true`; force push uses `--force-with-lease`. Git is invoked with argument arrays (not through a shell), remote URLs containing embedded credentials are rejected, and diff/stage operations exclude protected secret paths by default.
 
 File-edit arguments are normalized to support common provider variations, including top-level single-edit `{ path, oldText, newText }`, `filePath`/`file_path`, and `description`/`reason` aliases. If a provider accidentally sends both create and edit payloads, the registry chooses based on the actual path: existing files use targeted edits; missing files use createContent. It never overwrites an existing file with createContent. Generic provider metadata such as `description`, `oldText`, `limit`, and `offset` is tolerated when attached to unrelated tools, while operation-specific unknown arguments remain rejected.
+
+
+## Auto mode and permissions (v0.2.25)
+
+Auto mode can be toggled from the composer or Settings. When enabled, file/folder creation, editing, deletion, terminal commands, and Git mutations do not show approval prompts. Workspace trust, path boundaries, secret-file protections, command validation, and required force flags remain active. For those command operations, **Allow** remembers the exact command in the current workspace, **Allow once** authorizes only the current operation, and **Cancel** stops it. Remembered permissions are stored as hashes in VS Code extension global state.
+
+You can revoke all remembered command permissions at any time from **Settings → Behavior → Clear permissions**.

@@ -1,4 +1,5 @@
 import type { ApprovalPayload } from './config';
+import type { ApprovalDecision } from './tools';
 
 /** Runtime-validated message envelope received from the untrusted webview. */
 export interface WebviewMessage extends Record<string, unknown> {
@@ -22,7 +23,7 @@ export interface WebviewMessage extends Record<string, unknown> {
 }
 
 export interface PendingApproval {
-  resolve: (approved: boolean) => void;
+  resolve: (decision: ApprovalDecision) => void;
   timeout: NodeJS.Timeout;
   payload: ApprovalPayload;
   signal?: AbortSignal;
