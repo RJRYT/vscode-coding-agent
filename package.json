@@ -2,7 +2,7 @@
   "name": "nemotron-coding-agent",
   "displayName": "Nemotron Coding Agent",
   "description": "A workspace-aware coding agent powered by NVIDIA Nemotron. Review and approve file edits and terminal commands.",
-  "version": "0.2.22",
+  "version": "0.2.23",
   "icon": "media/extension-icon.png",
   "publisher": "rjryt",
   "license": "SEE LICENSE IN LICENSE",
@@ -24,7 +24,7 @@
     "agent",
     "chat"
   ],
-  "main": "./dist/extension.js",
+  "main": "./dist/src/extension.js",
   "activationEvents": [
     "onView:nemotronAgent.chatView",
     "onCommand:nemotronAgent.setApiKey",

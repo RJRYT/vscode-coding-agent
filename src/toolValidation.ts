@@ -36,7 +36,7 @@ function normalizeEditFields(item: ToolArguments, index: number, inheritedReplac
     throw new Error(`Edit ${index + 1} is missing its original text anchor. Use oldText. Received keys: ${Object.keys(item).join(', ') || '(none)'}.`);
   }
   if (newText === undefined) {
-    throw new Error(`Edit ${index + 1} is missing replacement text. Supply a string newText on this edit (or a top-level newText when there is exactly one edit). Received edit keys: ${Object.keys(item).join(', ') || '(none)'}; parent keys: ${parentKeys.join(', ') || '(none)'}. If this is a deletion, explicitly send newText: \"\". The extension will not guess replacement code.`);
+    throw new Error(`Edit ${index + 1} is missing replacement text. Supply a string newText on this edit (or a top-level newText when there is exactly one edit). Received edit keys: ${Object.keys(item).join(', ') || '(none)'}; parent keys: ${parentKeys.join(', ') || '(none)'}. If this is a deletion, explicitly send newText: "". The extension will not guess replacement code.`);
   }
   return { oldText, newText };
 }
@@ -147,15 +147,25 @@ export function validateToolArguments(name: string, value: unknown): ValidatedTo
       assertKeys(args, ['query', 'glob', 'limit', 'offset']);
       return { name: 'search_workspace', args: { query: requiredString(args, 'query', 2000), glob: optionalString(args, 'glob', 500), limit: optionalLimit(args, 'limit', 60), offset: optionalOffset(args, 'offset') } };
     case 'propose_file_edit': {
-      assertKeys(args, ['path', 'summary', 'edits', 'createContent', 'newText', 'newtext', 'new_text', 'replacement', 'replacementText', 'replacement_text', 'replacement_content', 'replacementContent', 'updatedText', 'updated_text', 'newContent', 'new_content', 'replaceWith', 'replace_with', 'replace', 'afterText', 'after_text', 'after', 'insertText', 'insert_text', 'insert', 'value', 'text', 'content', 'body', 'replacementValue', 'new_value', 'new']);
+      assertKeys(args, ['path', 'summary', 'description', 'edits', 'createContent', 'oldText', 'oldtext', 'old_text', 'originalText', 'original_text', 'original', 'search', 'find', 'old_content', 'old_code', 'before', 'old', 'newText', 'newtext', 'new_text', 'replacement', 'replacementText', 'replacement_text', 'replacement_content', 'replacementContent', 'updatedText', 'updated_text', 'newContent', 'new_content', 'replaceWith', 'replace_with', 'replace', 'afterText', 'after_text', 'after', 'insertText', 'insert_text', 'insert', 'value', 'text', 'content', 'body', 'replacementValue', 'new_value', 'new']);
       const filePath = requiredString(args, 'path', 1024);
-      const summary = requiredString(args, 'summary', 2000);
-      const rawEdits = args.edits;
+      const summary = requiredString({ summary: args.summary ?? args.description }, 'summary', 2000);
       const rawContent = args.createContent;
-      const hasEdits = Array.isArray(rawEdits);
       const hasCreate = typeof rawContent === 'string';
-      if (hasEdits === hasCreate) throw new Error('Provide exactly one of edits (existing file) or createContent (new file).');
-      if (hasEdits) {
+      const topLevelOldText = ['oldText', 'oldtext', 'old_text', 'originalText', 'original_text', 'original', 'search', 'find', 'old_content', 'old_code', 'before', 'old']
+        .map((key) => args[key]).find((candidate): candidate is string => typeof candidate === 'string');
+      const topLevelNewText = ['newText', 'newtext', 'new_text', 'replacement', 'replacementText', 'replacement_text', 'replacement_content', 'replacementContent', 'updatedText', 'updated_text', 'newContent', 'new_content', 'replaceWith', 'replace_with', 'replace', 'afterText', 'after_text', 'after', 'insertText', 'insert_text', 'insert', 'value', 'text', 'content', 'body', 'replacementValue', 'new_value', 'new']
+        .map((key) => args[key]).find((candidate): candidate is string => typeof candidate === 'string');
+      const hasTopLevelEdit = topLevelOldText !== undefined || topLevelNewText !== undefined;
+      let rawEdits: unknown = args.edits;
+      if (rawEdits === undefined && hasTopLevelEdit && !hasCreate) {
+        rawEdits = [{ oldText: topLevelOldText, newText: topLevelNewText }];
+      }
+      const hasEdits = Array.isArray(rawEdits);
+      if (hasEdits === hasCreate || (hasCreate && hasTopLevelEdit)) {
+        throw new Error('Provide exactly one operation: edits (existing file) or createContent (new file). For a single existing-file edit, provide edits: [{ oldText, newText }].');
+      }
+      if (Array.isArray(rawEdits)) {
         if (!rawEdits.length || rawEdits.length > 20) throw new Error('edits must contain between 1 and 20 entries.');
         let totalPatchChars = 0;
         const inheritedReplacement = rawEdits.length === 1

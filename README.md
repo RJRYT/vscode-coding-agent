@@ -1,4 +1,6 @@
-## Latest update — v0.2.22
+## Latest update — v0.2.23
+
+The runtime now loads the freshly compiled `dist/src` entry point. Tool argument compatibility and the packaged runtime/resource paths have been aligned.
 
 Fixes workspace tool pagination argument mismatches, merges partial streamed tool-argument objects without losing edit fields, improves escaped-anchor recovery and replacement alias normalization, and adds rich Markdown rendering including tables, nested lists, and task lists.
 

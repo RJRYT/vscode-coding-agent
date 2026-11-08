@@ -117,3 +117,29 @@ it('accepts offset and limit pagination on workspace tools', () => {
   expect(validateToolArguments('search_workspace', { query: 'export', limit: 20, offset: 40 }).args)
     .toMatchObject({ query: 'export', limit: 20, offset: 40 });
 });
+
+
+describe('provider argument compatibility', () => {
+  it('normalizes a top-level single edit into the canonical edits array', () => {
+    const result = validateToolArguments('propose_file_edit', {
+      path: 'src/a.ts', description: 'Update the import', oldText: 'import old from \'old\';', newText: 'import fresh from \'fresh\';',
+    });
+    expect(result).toMatchObject({
+      name: 'propose_file_edit',
+      args: { summary: 'Update the import', edits: [{ oldText: "import old from 'old';", newText: "import fresh from 'fresh';" }] },
+    });
+  });
+
+  it('accepts description as a summary alias', () => {
+    const result = validateToolArguments('propose_file_edit', {
+      path: 'src/a.ts', description: 'Create a new file', createContent: 'export {};',
+    });
+    expect(result).toMatchObject({ args: { summary: 'Create a new file', createContent: 'export {};' } });
+  });
+
+  it('rejects conflicting edit and create payloads clearly', () => {
+    expect(() => validateToolArguments('propose_file_edit', {
+      path: 'src/a.ts', summary: 'Ambiguous', edits: [{ oldText: 'a', newText: 'b' }], createContent: 'x',
+    })).toThrow(/exactly one operation/);
+  });
+});
