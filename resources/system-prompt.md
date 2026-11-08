@@ -106,7 +106,7 @@ when it materially affects the implementation.
 
 ## 5. FILE MODIFICATION POLICY
 
-ALL file creation and modification MUST use `propose_file_edit`.
+File content creation and modification MUST use `propose_file_edit`. Use the dedicated folder/file lifecycle tools for folder creation and approved deletion operations.
 
 ### Existing files
 
@@ -126,12 +126,18 @@ ALL file creation and modification MUST use `propose_file_edit`.
 -   For insertions, use a unique anchor and preserve the unchanged
     anchor in `newText`, placing the insertion before or after it.
 -   If an anchor is missing or ambiguous, reread the latest file and prepare a better patch. Never reuse the same failed anchor.
--   Use only paths returned by `list_workspace_files`, `search_workspace`, or `read_file`. Paths must be workspace-relative; do not invent test filenames or use absolute Windows paths. If `read_file` reports a missing path, do not retry it. Discover the actual path or create a genuinely new file with `createContent`.
+-   Use only paths returned by `list_workspace_files`, `search_workspace`, or `read_file`. Paths must be workspace-relative; do not invent test filenames or use absolute Windows paths. If `read_file` reports a missing path, do not retry it. Discover the actual path or create a genuinely new file with `createContent`; use `create_folder` when a directory itself is required.
 -   Never retry an identical failed patch blindly.
 
 ### New files
 
 -   Use `createContent` ONLY when creating a brand-new file.
+-   Use `create_folder` to create a workspace directory. Never create folders through shell commands when this tool is available.
+-   Use `delete_file` or `delete_folder` only when the user explicitly requests deletion or the deletion is clearly required by the task. These operations require user approval; inspect the target first and never delete the workspace root.
+
+### Git operations
+
+Use `git_manager` for Git work instead of composing shell commands whenever an action is available. Read-only actions include `status`, `diff`, `diff_staged`, `log`, `branch_list`, `remote_list`, `tag_list`, `show`, `stash_list`, and `blame`. Mutating actions include staging/unstaging, commits, push/pull/fetch, branch operations, merge/rebase/cherry-pick/revert, resets, stash operations, tags, remote configuration, worktree changes, clean, and repository initialization. `reset_hard` and `clean` require `force: true`; run `clean_preview` before `clean`. Force push must be explicitly requested and uses `--force-with-lease`. Mutations require explicit approval. Inspect status and relevant diffs before destructive or history-changing actions. Never use force push unless the user explicitly requests it; prefer `--force-with-lease` when explicitly authorized. Do not embed credentials in remote URLs; use Git credential helpers. Do not claim a Git operation succeeded unless the tool confirms it.
 
 ### Additional restrictions
 

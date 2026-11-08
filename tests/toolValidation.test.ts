@@ -14,9 +14,10 @@ describe('tool argument validation', () => {
     expect(() => validateToolArguments('delete_everything', {})).toThrow(/Unsupported tool name/);
   });
 
-  it('requires exactly one file-edit mode', () => {
-    expect(() => validateToolArguments('propose_file_edit', { path: 'a.ts', summary: 'edit' })).toThrow(/exactly one/);
-    expect(() => validateToolArguments('propose_file_edit', { path: 'a.ts', summary: 'edit', edits: [], createContent: 'x' })).toThrow(/exactly one/);
+  it('requires a file-edit mode and normalizes empty edit arrays', () => {
+    expect(() => validateToolArguments('propose_file_edit', { path: 'a.ts', summary: 'edit' })).toThrow(/No file operation supplied/);
+    expect(validateToolArguments('propose_file_edit', { path: 'a.ts', summary: 'edit', edits: [], createContent: 'x' }))
+      .toMatchObject({ args: { createContent: 'x' } });
   });
 
 
@@ -77,7 +78,7 @@ describe('tool argument validation', () => {
 
   it('validates patch anchors and terminal arguments', () => {
     expect(() => validateToolArguments('propose_file_edit', { path: 'a.ts', summary: 'edit', edits: [{ oldText: '', newText: 'x' }] })).toThrow(/oldText/);
-    expect(() => validateToolArguments('run_terminal_command', { command: 'npm test' })).toThrow(/reason/);
+    expect(validateToolArguments('run_terminal_command', { command: 'npm test' }).name).toBe('run_terminal_command');
     expect(validateToolArguments('run_terminal_command', { command: 'npm test', reason: 'Run tests' }).name).toBe('run_terminal_command');
   });
 });
@@ -119,27 +120,55 @@ it('accepts offset and limit pagination on workspace tools', () => {
 });
 
 
-describe('provider argument compatibility', () => {
-  it('normalizes a top-level single edit into the canonical edits array', () => {
-    const result = validateToolArguments('propose_file_edit', {
-      path: 'src/a.ts', description: 'Update the import', oldText: 'import old from \'old\';', newText: 'import fresh from \'fresh\';',
-    });
-    expect(result).toMatchObject({
-      name: 'propose_file_edit',
-      args: { summary: 'Update the import', edits: [{ oldText: "import old from 'old';", newText: "import fresh from 'fresh';" }] },
-    });
+describe('expanded workspace and Git tool contracts', () => {
+  it('normalizes a top-level single-file edit and description alias', () => {
+    expect(validateToolArguments('propose_file_edit', {
+      path: 'src/a.ts', description: 'Update file', oldText: 'before', newText: 'after',
+    })).toMatchObject({ args: { path: 'src/a.ts', summary: 'Update file', edits: [{ oldText: 'before', newText: 'after' }] } });
   });
 
-  it('accepts description as a summary alias', () => {
-    const result = validateToolArguments('propose_file_edit', {
-      path: 'src/a.ts', description: 'Create a new file', createContent: 'export {};',
-    });
-    expect(result).toMatchObject({ args: { summary: 'Create a new file', createContent: 'export {};' } });
+  it('accepts filePath aliases and a single edit with an empty deletion replacement', () => {
+    expect(validateToolArguments('propose_file_edit', {
+      file_path: 'src/a.ts', reason: 'Remove obsolete text', oldText: 'obsolete', newText: '',
+    })).toMatchObject({ args: { path: 'src/a.ts', edits: [{ oldText: 'obsolete', newText: '' }] } });
   });
 
-  it('rejects conflicting edit and create payloads clearly', () => {
-    expect(() => validateToolArguments('propose_file_edit', {
-      path: 'src/a.ts', summary: 'Ambiguous', edits: [{ oldText: 'a', newText: 'b' }], createContent: 'x',
-    })).toThrow(/exactly one operation/);
+  it('normalizes object-shaped edits and content aliases', () => {
+    expect(validateToolArguments('propose_file_edit', {
+      path: 'src/a.ts', edits: { oldText: 'before', newText: 'after' }, limit: 50, offset: 10,
+    })).toMatchObject({ args: { edits: [{ oldText: 'before', newText: 'after' }] } });
+    expect(validateToolArguments('propose_file_edit', {
+      path: 'src/new.ts', content: 'export {};', description: 'Create module',
+    })).toMatchObject({ args: { createContent: 'export {};' } });
+    expect(validateToolArguments('propose_file_edit', {
+      path: 'src/newer.ts', edits: [], content: 'export const created = true;',
+    })).toMatchObject({ args: { createContent: 'export const created = true;' } });
+  });
+
+  it('preserves both operation candidates so the workspace can choose by actual path existence', () => {
+    expect(validateToolArguments('propose_file_edit', {
+      path: 'src/a.ts', edits: [{ oldText: 'a', newText: 'b' }], createContent: 'new file',
+    })).toMatchObject({ args: { edits: [{ oldText: 'a', newText: 'b' }], createContent: 'new file' } });
+  });
+
+  it('accepts folder lifecycle operations and path aliases', () => {
+    expect(validateToolArguments('create_folder', { filePath: 'src/new', description: 'Create module' }))
+      .toMatchObject({ name: 'create_folder', args: { path: 'src/new', summary: 'Create module' } });
+    expect(validateToolArguments('delete_file', { path: 'src/old.ts' }).name).toBe('delete_file');
+    expect(validateToolArguments('delete_folder', { path: 'src/old', offset: 0, limit: 5, description: 'clean old folder' }).name).toBe('delete_folder');
+  });
+
+  it('validates Git actions and arguments', () => {
+    expect(validateToolArguments('git_manager', { action: 'stage', paths: ['src/a.ts'] }))
+      .toMatchObject({ name: 'git_manager', args: { action: 'stage', paths: ['src/a.ts'] } });
+    expect(validateToolArguments('git_manager', { action: 'branch_create', branch: 'feature/demo' }).name).toBe('git_manager');
+    expect(() => validateToolArguments('git_manager', { action: 'delete_everything' })).toThrow(/Unsupported git action/);
+  });
+
+  it('accepts a path argument on active editor context and common pagination extras', () => {
+    expect(validateToolArguments('get_active_editor_context', { path: 'src/a.ts', offset: 0, limit: 50, oldText: 'generic noise', description: 'context' }))
+      .toMatchObject({ args: { path: 'src/a.ts' } });
+    expect(validateToolArguments('run_terminal_command', { command: 'npm test', reason: 'tests', path: 'src' }).name)
+      .toBe('run_terminal_command');
   });
 });

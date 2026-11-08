@@ -13,15 +13,21 @@ export class ToolDispatcher {
       case 'read_file':
         return this.registry.readFile(call.args.path, call.args.limit, call.args.offset);
       case 'get_active_editor_context':
-        return this.registry.getActiveEditorContext();
+        return call.args.path ? this.registry.readFile(call.args.path) : this.registry.getActiveEditorContext();
       case 'search_workspace':
         return this.registry.searchWorkspace(call.args.query, call.args.glob, call.args.limit, call.args.offset);
       case 'propose_file_edit':
-        return 'edits' in call.args
-          ? this.registry.proposeFileEdit(call.args.path, call.args.edits, undefined, call.args.summary, signal)
-          : this.registry.proposeFileEdit(call.args.path, undefined, call.args.createContent, call.args.summary, signal);
+        return this.registry.proposeFileEdit(call.args.path, call.args.edits, call.args.createContent, call.args.summary, signal);
+      case 'create_folder':
+        return this.registry.createFolder(call.args.path, call.args.summary, signal);
+      case 'delete_file':
+        return this.registry.deleteFile(call.args.path, call.args.summary, signal);
+      case 'delete_folder':
+        return this.registry.deleteFolder(call.args.path, call.args.summary, signal);
+      case 'git_manager':
+        return this.registry.gitManager(call.args, signal);
       case 'run_terminal_command':
-        return this.registry.runCommand(call.args.command, call.args.reason, signal);
+        return this.registry.runCommand(call.args.command, call.args.reason, signal, call.args.path);
     }
   }
 }

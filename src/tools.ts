@@ -21,6 +21,7 @@ import { applyExactTextPatches, createPatchPreview, TextPatch } from './patchEng
 import type { AgentLogger } from './logger';
 
 const execAsync = promisify(child_process.exec);
+const execFileAsync = promisify(child_process.execFile);
 
 export interface ToolResult {
   content: string;
@@ -73,6 +74,7 @@ export class ToolRegistry {
             type: 'object',
             properties: {
               glob: { type: 'string', description: 'Optional glob pattern; defaults to **/*.' },
+              path: { type: 'string', description: 'Alias for glob; may be a workspace-relative folder prefix.' },
               limit: { type: 'integer', description: 'Maximum number of paths (max 150).' },
               offset: { type: 'integer', description: 'Optional zero-based pagination offset.' },
             },
@@ -88,8 +90,8 @@ export class ToolRegistry {
             'Read a UTF-8 text file from the workspace. Paths must be relative to the workspace root.',
           parameters: {
             type: 'object',
-            properties: { path: { type: 'string' }, limit: { type: 'integer', description: 'Optional maximum number of lines to return (1-2000).' }, offset: { type: 'integer', description: 'Optional zero-based starting line offset.' } },
-            required: ['path'],
+            properties: { path: { type: 'string' }, filePath: { type: 'string' }, file_path: { type: 'string' }, file: { type: 'string' }, limit: { type: 'integer', description: 'Optional maximum number of lines to return (1-2000).' }, offset: { type: 'integer', description: 'Optional zero-based starting line offset.' } },
+            required: [],
           },
         },
       },
@@ -99,7 +101,7 @@ export class ToolRegistry {
           name: 'get_active_editor_context',
           description:
             'Get the active editor file and selected text (or nearby file contents when there is no selection). Useful when the user refers to the currently open file or selected code.',
-          parameters: { type: 'object', properties: {}, required: [] },
+          parameters: { type: 'object', properties: { path: { type: 'string', description: 'Optional workspace-relative file to inspect instead of the active editor.' }, limit: { type: 'integer' }, offset: { type: 'integer' } }, required: [] },
         },
       },
       {
@@ -113,6 +115,7 @@ export class ToolRegistry {
             properties: {
               query: { type: 'string' },
               glob: { type: 'string', description: 'Optional file glob, for example **/*.{ts,x}.' },
+              path: { type: 'string', description: 'Alias for the file glob or path prefix.' },
               limit: { type: 'integer' },
               offset: { type: 'integer', description: 'Optional zero-based pagination offset.' },
             },
@@ -130,13 +133,10 @@ export class ToolRegistry {
             type: 'object',
             properties: {
               path: { type: 'string', description: 'Workspace-relative path.' },
+              filePath: { type: 'string' }, file_path: { type: 'string' }, file: { type: 'string' },
               summary: { type: 'string', description: 'Short explanation of the change.' },
-              description: { type: 'string', description: 'Compatibility alias for summary.' },
-              oldText: { type: 'string', description: 'Compatibility anchor for a single existing-file edit. Prefer edits[0].oldText.' },
-              oldtext: { type: 'string' }, old_text: { type: 'string' },
-              originalText: { type: 'string' }, original_text: { type: 'string' },
-              original: { type: 'string' }, search: { type: 'string' }, find: { type: 'string' },
-              old_content: { type: 'string' }, old_code: { type: 'string' }, before: { type: 'string' }, old: { type: 'string' },
+              description: { type: 'string' }, reason: { type: 'string' },
+              oldText: { type: 'string', description: 'Single-edit compatibility anchor. Prefer edits[0].oldText.' },
               newText: { type: 'string', description: 'For a single edit, compatibility replacement fallback. Prefer edits[0].newText.' },
               newtext: { type: 'string' },
               new_text: { type: 'string' },
@@ -167,7 +167,6 @@ export class ToolRegistry {
               new: { type: 'string' },
               edits: {
                 type: 'array',
-                minItems: 1,
                 maxItems: 20,
                 description: 'Exact replacements for an existing file. Use focused anchors where practical; a full-file oldText is allowed only when it exactly matches the current file snapshot.',
                 items: {
@@ -195,7 +194,52 @@ export class ToolRegistry {
               },
               createContent: { type: 'string', description: 'Complete content for a brand-new file only. Existing files must use edits with exact oldText anchors.' },
             },
-            required: ['path'],
+            required: [],
+          },
+        },
+      },
+      ...(['create_folder', 'delete_file', 'delete_folder'] as const).map((name) => ({
+        type: 'function',
+        function: {
+          name,
+          description: name === 'create_folder'
+            ? 'Create a new workspace folder (including missing parent folders). Requires user approval.'
+            : name === 'delete_file'
+              ? 'Delete a workspace file using the operating-system trash when supported. Requires user approval.'
+              : 'Recursively delete a workspace folder using the operating-system trash when supported. Never target the workspace root. Requires user approval.',
+          parameters: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: 'Workspace-relative folder or file path.' },
+              filePath: { type: 'string' }, file_path: { type: 'string' }, file: { type: 'string' },
+              summary: { type: 'string', description: 'Why this operation is needed.' }, description: { type: 'string' }, reason: { type: 'string' },
+            },
+            required: [],
+          },
+        },
+      })),
+      {
+        type: 'function',
+        function: {
+          name: 'git_manager',
+          description: 'Manage Git safely. Read actions: status, diff, diff_staged, log, branch_list, remote_list, tag_list, show, stash_list, blame. Mutating actions require approval: stage, unstage, commit, push, pull, fetch, branch_create, branch_switch, branch_delete, branch_rename, merge, merge_abort, stash, stash_pop, stash_apply, stash_drop, tag_create, tag_delete, remote_add, remote_remove, remote_set_url, remote_prune, tag_push, push_tags, rebase, rebase_abort, cherry_pick, revert, reset_soft, reset_mixed, reset_hard, clean_preview, clean, worktree_list, worktree_add, worktree_remove, init. Use paths for file-scoped actions, branch/newBranch for branch actions, message for commit/stash/tag messages, remote/url for remote actions, ref for show/stash/tag references. Git arguments are passed without a shell.',
+          parameters: {
+            type: 'object',
+            properties: {
+              action: { type: 'string', enum: ['status','diff','diff_staged','log','branch_list','remote_list','tag_list','show','stash_list','blame','stage','unstage','commit','push','pull','fetch','branch_create','branch_switch','branch_delete','branch_rename','merge','merge_abort','stash','stash_pop','stash_apply','stash_drop','tag_create','tag_delete','remote_add','remote_remove','remote_set_url','remote_prune','tag_push','push_tags','rebase','rebase_abort','cherry_pick','revert','reset_soft','reset_mixed','reset_hard','clean_preview','clean','worktree_list','worktree_add','worktree_remove','init'] },
+              path: { type: 'string', description: 'Optional workspace-relative path for blame or a single pathspec.' },
+              paths: { type: 'array', items: { type: 'string' }, description: 'Workspace-relative pathspecs for stage, unstage, diff, and blame.' },
+              branch: { type: 'string' },
+              newBranch: { type: 'string' },
+              message: { type: 'string' },
+              remote: { type: 'string' },
+              url: { type: 'string' },
+              ref: { type: 'string' },
+              all: { type: 'boolean' },
+              force: { type: 'boolean' },
+              limit: { type: 'integer' },
+            },
+            required: ['action'],
           },
         },
       },
@@ -207,12 +251,218 @@ export class ToolRegistry {
             'Propose a shell command or multiline shell script to run in the workspace root. The user must approve the exact command before execution. Shell pipes, chaining, redirection, subshells and ordinary development commands are supported. Commands run with the current user permissions in a trusted workspace; do not expose secrets or perform destructive actions unless explicitly requested by the user.',
           parameters: {
             type: 'object',
-            properties: { command: { type: 'string', maxLength: 20000 }, reason: { type: 'string' } },
-            required: ['command', 'reason'],
+            properties: { command: { type: 'string', maxLength: 20000 }, reason: { type: 'string' }, description: { type: 'string' }, path: { type: 'string', description: 'Optional workspace-relative working directory.' }, limit: { type: 'integer' }, offset: { type: 'integer' } },
+            required: ['command'],
           },
         },
       },
     ];
+  }
+
+  async createFolder(relativePath: string, summary: string, signal?: AbortSignal): Promise<ToolResult> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!root) throw new Error('No workspace folder is open.');
+    if (!vscode.workspace.isTrusted) throw new Error('Folder creation is disabled in an untrusted workspace.');
+    const uri = safeUri(relativePath, root);
+    await assertPathInsideWorkspace(uri, root);
+    try { await vscode.workspace.fs.stat(uri); throw new Error(`The folder path already exists: ${relativePath}.`); }
+    catch (error: unknown) { if (!isFileNotFound(error)) throw error; }
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const approved = await this.requestApproval({ id, kind: 'file', title: `Create folder ${relativePath}`, summary: summary || 'Create workspace folder', path: relativePath, oldPreview: '(does not exist)', newPreview: `Directory: ${relativePath}` }, signal);
+    if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for folder-creation approval.');
+    if (!approved) return { content: `User rejected folder creation: ${relativePath}. Do not retry the same operation.`, status: 'rejected' };
+    if (signal?.aborted) throw new Error('Request cancelled before folder creation.');
+    await assertPathInsideWorkspace(uri, root);
+    try { await vscode.workspace.fs.stat(uri); throw new Error(`The path appeared while approval was pending: ${relativePath}. Nothing was created.`); }
+    catch (error: unknown) { if (!isFileNotFound(error)) throw error; }
+    await vscode.workspace.fs.createDirectory(uri);
+    const stat = await vscode.workspace.fs.stat(uri);
+    if (!(stat.type & vscode.FileType.Directory)) throw new Error(`Folder creation could not be verified: ${relativePath}.`);
+    return { content: `Successfully created and verified folder ${relativePath}.`, status: 'success' };
+  }
+
+  async deleteFile(relativePath: string, summary: string, signal?: AbortSignal): Promise<ToolResult> {
+    if (isSensitivePath(relativePath)) throw new Error('Deleting environment files, private keys, and secret files is blocked.');
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!root) throw new Error('No workspace folder is open.');
+    if (!vscode.workspace.isTrusted) throw new Error('File deletion is disabled in an untrusted workspace.');
+    const uri = safeUri(relativePath, root);
+    await assertPathInsideWorkspace(uri, root);
+    const before = await vscode.workspace.fs.stat(uri);
+    if (before.type & vscode.FileType.Directory) throw new Error('The target is a directory. Use delete_folder instead.');
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const approved = await this.requestApproval({ id, kind: 'file', title: `Delete file ${relativePath}`, summary: summary || 'Delete workspace file', path: relativePath, oldPreview: `File: ${relativePath}\nSize: ${before.size} bytes`, newPreview: '(file moved to trash, when supported)' }, signal);
+    if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for file-deletion approval.');
+    if (!approved) return { content: `User rejected deletion of ${relativePath}. Do not retry the same operation.`, status: 'rejected' };
+    if (signal?.aborted) throw new Error('Request cancelled before file deletion.');
+    await assertPathInsideWorkspace(uri, root);
+    const current = await vscode.workspace.fs.stat(uri);
+    if (current.mtime !== before.mtime || current.size !== before.size || current.type !== before.type) throw new Error('The file changed while approval was pending. Nothing was deleted; inspect it and retry with fresh context.');
+    await vscode.workspace.fs.delete(uri, { useTrash: true });
+    try { await vscode.workspace.fs.stat(uri); throw new Error(`Deletion verification failed: ${relativePath} still exists.`); }
+    catch (error: unknown) { if (!isFileNotFound(error)) throw error; }
+    return { content: `Successfully deleted ${relativePath}${process.platform === 'win32' ? ' (trash behavior depends on the VS Code file-system provider)' : ''}.`, status: 'success' };
+  }
+
+  async deleteFolder(relativePath: string, summary: string, signal?: AbortSignal): Promise<ToolResult> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!root) throw new Error('No workspace folder is open.');
+    if (!vscode.workspace.isTrusted) throw new Error('Folder deletion is disabled in an untrusted workspace.');
+    const uri = safeUri(relativePath, root);
+    await assertPathInsideWorkspace(uri, root);
+    if (uri.toString() === root.toString() || path.resolve(uri.fsPath) === path.resolve(root.fsPath)) throw new Error('Deleting the workspace root is blocked.');
+    const before = await vscode.workspace.fs.stat(uri);
+    if (!(before.type & vscode.FileType.Directory)) throw new Error('The target is not a directory. Use delete_file for files.');
+    const inventory = await this.inventoryFolder(uri, 10000);
+    const sensitiveEntries = inventory.entries.filter((entry) => isSensitivePath(path.posix.join(relativePath.replace(/\\/g, '/'), entry)));
+    if (sensitiveEntries.length) throw new Error(`Folder deletion is blocked because it contains protected secret paths: ${sensitiveEntries.slice(0, 10).join(', ')}.`);
+    const preview = inventory.entries.slice(0, 80).join('\n') || '(empty folder)';
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const approved = await this.requestApproval({ id, kind: 'file', title: `Delete folder ${relativePath}`, summary: summary || 'Recursively delete workspace folder', path: relativePath, oldPreview: `${inventory.files} files, ${inventory.directories} subfolders\n${preview}${inventory.entries.length > 80 ? '\n… additional entries omitted …' : ''}`, newPreview: '(entire folder moved to trash, when supported)' }, signal);
+    if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for folder-deletion approval.');
+    if (!approved) return { content: `User rejected deletion of folder ${relativePath}. Do not retry the same operation.`, status: 'rejected' };
+    if (signal?.aborted) throw new Error('Request cancelled before folder deletion.');
+    await assertPathInsideWorkspace(uri, root);
+    const current = await vscode.workspace.fs.stat(uri);
+    if (current.mtime !== before.mtime || current.type !== before.type) throw new Error('The folder changed while approval was pending. Nothing was deleted; inspect it and retry.');
+    await vscode.workspace.fs.delete(uri, { recursive: true, useTrash: true });
+    try { await vscode.workspace.fs.stat(uri); throw new Error(`Deletion verification failed: ${relativePath} still exists.`); }
+    catch (error: unknown) { if (!isFileNotFound(error)) throw error; }
+    return { content: `Successfully deleted folder ${relativePath} (${inventory.files} files and ${inventory.directories} subfolders).`, status: 'success' };
+  }
+
+  private async inventoryFolder(uri: vscode.Uri, maxEntries: number): Promise<{ files: number; directories: number; entries: string[] }> {
+    const entries: string[] = []; let files = 0; let directories = 0;
+    const queue: Array<{ uri: vscode.Uri; relative: string }> = [{ uri, relative: '' }];
+    while (queue.length) {
+      const current = queue.shift()!;
+      for (const [name, type] of await vscode.workspace.fs.readDirectory(current.uri)) {
+        if (entries.length >= maxEntries) throw new Error(`Folder contains more than ${maxEntries} entries; refusing an unbounded recursive delete.`);
+        const relative = current.relative ? `${current.relative}/${name}` : name;
+        if (type & vscode.FileType.Directory) { directories++; entries.push(`${relative}/`); queue.push({ uri: vscode.Uri.joinPath(current.uri, name), relative }); }
+        else { files++; entries.push(relative); }
+      }
+    }
+    return { files, directories, entries };
+  }
+
+  async gitManager(input: {
+    action: string; path?: string; paths?: string[]; branch?: string; newBranch?: string; message?: string;
+    remote?: string; url?: string; ref?: string; all?: boolean; force?: boolean; limit?: number;
+  }, signal?: AbortSignal): Promise<ToolResult> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!root) throw new Error('No workspace folder is open.');
+    const action = input.action;
+    const required = (value: string | undefined, label: string): string => { if (!value?.trim()) throw new Error(`Git action ${action} requires ${label}.`); return value.trim(); };
+    const safeName = (value: string, label: string): string => { if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(value) || value.startsWith('-') || value.includes('..')) throw new Error(`Invalid ${label}: ${value}`); return value; };
+    const safeRef = (value: string): string => {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._/@{}:~^-]{0,199}$/.test(value) || value.includes('..')) throw new Error(`Invalid Git reference: ${value}`);
+      return value;
+    };
+    const pathspecs = [...(input.paths || []), ...(input.path ? [input.path] : [])];
+    for (const item of pathspecs) {
+      if (isSensitivePath(item)) throw new Error(`Git access to protected secret path is blocked: ${item}`);
+      const uri = safeUri(item, root); await assertPathInsideWorkspace(uri, root);
+    }
+    const secretExcludes = [
+      ':(exclude).env*', ':(exclude)**/.env*',
+      ':(exclude).npmrc', ':(exclude)**/.npmrc', ':(exclude).netrc', ':(exclude)**/.netrc',
+      ':(exclude)*.pem', ':(exclude)**/*.pem', ':(exclude)*.key', ':(exclude)**/*.key',
+      ':(exclude)*.p12', ':(exclude)**/*.p12', ':(exclude)*.pfx', ':(exclude)**/*.pfx', ':(exclude)*.p8', ':(exclude)**/*.p8',
+      ':(exclude)id_rsa', ':(exclude)**/id_rsa', ':(exclude)id_ed25519', ':(exclude)**/id_ed25519',
+      ':(exclude).secrets', ':(exclude)**/.secrets', ':(exclude)secrets.json', ':(exclude)**/secrets.json',
+      ':(exclude)credentials*', ':(exclude)**/credentials*',
+      ':(exclude).ssh/**', ':(exclude)**/.ssh/**', ':(exclude).aws/**', ':(exclude)**/.aws/**', ':(exclude).gnupg/**', ':(exclude)**/.gnupg/**',
+    ];
+    const remote = input.remote ? safeName(input.remote, 'remote name') : 'origin';
+    const branch = input.branch ? safeName(input.branch, 'branch name') : undefined;
+    const args: string[] = [];
+    let mutating = false; let reason = `Git ${action}`;
+    switch (action) {
+      case 'status': args.push('status','--short','--branch'); break;
+      case 'diff': args.push('diff','--',...(pathspecs.length?pathspecs:['.']),...secretExcludes); break;
+      case 'diff_staged': args.push('diff','--cached','--',...(pathspecs.length?pathspecs:['.']),...secretExcludes); break;
+      case 'log': args.push('log','-n',String(input.limit || 20),'--oneline','--decorate'); break;
+      case 'branch_list': args.push('branch','-a','--no-color'); break;
+      case 'remote_list': args.push('remote','-v'); break;
+      case 'tag_list': args.push('tag','--list'); break;
+      case 'show': args.push('show','--stat','--oneline',safeRef(input.ref || 'HEAD')); break;
+      case 'stash_list': args.push('stash','list'); break;
+      case 'blame': { const target = required(input.path || input.paths?.[0], 'path'); args.push('blame','--',target); break; }
+      case 'stage': mutating=true; args.push('add',...(input.all || !pathspecs.length ? ['-A','--','.',...secretExcludes] : ['--',...pathspecs])); break;
+      case 'unstage': mutating=true; args.push(...(pathspecs.length ? ['restore','--staged','--',...pathspecs] : ['reset','-q','HEAD'])); break;
+      case 'commit': mutating=true; args.push('commit','-m',required(input.message,'message')); break;
+      case 'push': mutating=true; args.push('push',...(input.force?['--force-with-lease']:[]),remote,...(branch?[branch]:[])); break;
+      case 'pull': mutating=true; args.push('pull',remote,...(branch?[branch]:[])); break;
+      case 'fetch': mutating=true; args.push('fetch',remote); break;
+      case 'branch_create': mutating=true; args.push('switch','-c',safeName(required(input.branch,'branch'),'branch name')); break;
+      case 'branch_switch': mutating=true; args.push('switch',safeName(required(input.branch,'branch'),'branch name')); break;
+      case 'branch_delete': mutating=true; args.push('branch',input.force?'-D':'-d',safeName(required(input.branch,'branch'),'branch name')); break;
+      case 'branch_rename': mutating=true; args.push('branch','-m',safeName(required(input.branch,'branch'),'branch name'),safeName(required(input.newBranch,'newBranch'),'branch name')); break;
+      case 'merge': mutating=true; args.push('merge',safeName(required(input.branch,'branch'),'branch name')); break;
+      case 'merge_abort': mutating=true; args.push('merge','--abort'); break;
+      case 'stash': mutating=true; args.push('stash','push',...(input.message?['-m',input.message]:[])); break;
+      case 'stash_pop': mutating=true; args.push('stash','pop',safeRef(input.ref || 'stash@{0}')); break;
+      case 'stash_apply': mutating=true; args.push('stash','apply',safeRef(input.ref || 'stash@{0}')); break;
+      case 'stash_drop': mutating=true; args.push('stash','drop',safeRef(input.ref || 'stash@{0}')); break;
+      case 'tag_create': mutating=true; args.push('tag',...(input.message?['-a',safeName(required(input.ref,'tag name'),'tag name'),'-m',input.message]:[safeName(required(input.ref,'tag name'),'tag name')])); break;
+      case 'tag_delete': mutating=true; args.push('tag','-d',safeName(required(input.ref,'tag name'),'tag name')); break;
+      case 'remote_add': mutating=true; args.push('remote','add',safeName(required(input.remote,'remote name'),'remote name'),required(input.url,'url')); break;
+      case 'remote_remove': mutating=true; args.push('remote','remove',safeName(required(input.remote,'remote name'),'remote name')); break;
+      case 'remote_set_url': mutating=true; args.push('remote','set-url',safeName(required(input.remote,'remote name'),'remote name'),required(input.url,'url')); break;
+      case 'remote_prune': mutating=true; args.push('remote','prune',remote); break;
+      case 'tag_push': mutating=true; args.push('push',remote,'tag',safeName(required(input.ref,'tag name'),'tag name')); break;
+      case 'push_tags': mutating=true; args.push('push',remote,'--tags'); break;
+      case 'rebase': mutating=true; args.push('rebase',safeName(required(input.branch,'branch'),'branch name')); break;
+      case 'rebase_abort': mutating=true; args.push('rebase','--abort'); break;
+      case 'cherry_pick': mutating=true; args.push('cherry-pick',safeRef(required(input.ref,'commit reference'))); break;
+      case 'revert': mutating=true; args.push('revert',safeRef(required(input.ref,'commit reference'))); break;
+      case 'reset_soft': mutating=true; args.push('reset','--soft',safeRef(input.ref || 'HEAD')); break;
+      case 'reset_mixed': mutating=true; args.push('reset','--mixed',safeRef(input.ref || 'HEAD')); break;
+      case 'reset_hard': if (input.force !== true) throw new Error('reset_hard requires force: true and explicit user approval.'); mutating=true; args.push('reset','--hard',safeRef(input.ref || 'HEAD')); break;
+      case 'clean_preview': args.push('clean','-nd',...(input.all?['-x']:[]),'--','.',...secretExcludes); break;
+      case 'clean': if (input.force !== true) throw new Error('clean requires force: true and explicit user approval. Run clean_preview first.'); mutating=true; args.push('clean','-fd',...(input.all?['-x']:[]),'--','.',...secretExcludes); break;
+      case 'worktree_list': args.push('worktree','list','--porcelain'); break;
+      case 'worktree_add': { mutating=true; const target=required(input.path,'workspace-relative worktree path'); const targetUri=safeUri(target,root); await assertPathInsideWorkspace(targetUri,root); args.push('worktree','add',...(branch?['-b',branch]:[]),targetUri.fsPath); break; }
+      case 'worktree_remove': { mutating=true; const target=required(input.path,'workspace-relative worktree path'); const targetUri=safeUri(target,root); await assertPathInsideWorkspace(targetUri,root); args.push('worktree','remove',...(input.force?['--force']:[]),targetUri.fsPath); break; }
+      case 'init': mutating=true; args.push('init'); break;
+      default: throw new Error(`Unsupported Git action: ${action}.`);
+    }
+    if (input.url && /:\/\/[^/]*@|[?&](access_token|token|password)=/i.test(input.url)) throw new Error('Remote URLs containing embedded credentials or tokens are blocked. Use a credential helper instead.');
+    if (mutating && !vscode.workspace.isTrusted) throw new Error('Git write operations are disabled in an untrusted workspace. Trust this workspace first.');
+    const cwd = root.fsPath;
+    // Ensure Git resolves to a repository rooted inside this workspace (unless initializing one here).
+    if (action !== 'init') {
+      try {
+        const top = await execFileAsync('git',['rev-parse','--show-toplevel'],{cwd,timeout:10_000,windowsHide:true});
+        const gitRoot = path.resolve(String(top.stdout).trim());
+        const rel = path.relative(path.resolve(cwd),gitRoot);
+        if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) throw new Error('Git repository root is outside the opened workspace; refusing to operate on it.');
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('outside the opened workspace')) throw error;
+        throw new Error('This workspace is not inside a Git repository. Use git_manager action "init" to initialize one here.');
+      }
+    }
+    const display = `git ${args.map((arg) => /\s/.test(arg) ? JSON.stringify(arg) : arg).join(' ')}`;
+    if (mutating) {
+      const approved = await this.requestApproval({ id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, kind: 'command', title: `Approve Git: ${action}`, summary: input.message || reason, command: display }, signal);
+      if (!approved && signal?.aborted) throw new Error('Request cancelled while waiting for Git approval.');
+      if (!approved) return { content: `User rejected Git action ${action}. Do not retry it.`, status: 'rejected' };
+      if (signal?.aborted) throw new Error('Request cancelled before Git operation.');
+    }
+    try {
+      const result = await execFileAsync('git',args,{cwd,timeout:COMMAND_TIMEOUT_MS,maxBuffer:COMMAND_MAX_BUFFER,windowsHide:true,signal});
+      const redact = (value: string): string => value
+        .replace(/(https?:\/\/)[^/@\s]+@/gi, '$1[credentials-redacted]@')
+        .replace(/([?&](?:access_token|token|password)=)[^&\s]+/gi, '$1[redacted]');
+      const stdout = redact(String(result.stdout || '').trim()); const stderr = redact(String(result.stderr || '').trim());
+      return { content: [`Git action: ${action}`, `Command: ${display}`, `Result: SUCCESS`, stdout ? `Output:\n${stdout.slice(0,12000)}` : 'Output: (empty)', stderr ? `Warnings:\n${stderr.slice(0,3000)}` : ''].filter(Boolean).join('\n'), status:'success' };
+    } catch (error: unknown) {
+      const details = error as { message?:string; stdout?:string; stderr?:string; code?:number|string };
+      const redact = (value: string): string => value.replace(/(https?:\/\/)[^/@\s]+@/gi, '$1[credentials-redacted]@').replace(/([?&](?:access_token|token|password)=)[^&\s]+/gi, '$1[redacted]');
+      return { content: [`Git action: ${action}`, `Command: ${display}`, `Result: FAILURE`, `Exit code: ${details.code ?? 'unknown'}`, `Error: ${redact(String(details.stderr || details.message || 'Git operation failed')).slice(0,5000)}`, details.stdout ? `Output:\n${redact(String(details.stdout)).slice(0,5000)}` : ''].filter(Boolean).join('\n'), isError:true, status:signal?.aborted?'cancelled':'failed' };
+    }
   }
 
   async listFiles(glob?: string, rawLimit?: number, rawOffset?: number): Promise<ToolResult> {
@@ -421,9 +671,8 @@ export class ToolRegistry {
       if (typeof createContent !== 'string') {
         throw new Error(`File ${relativePath} does not exist. Use createContent only to create a new file.`);
       }
-      if (Array.isArray(edits) && edits.length) {
-        throw new Error('A new file must use createContent; targeted edits are only for existing files.');
-      }
+      // If a provider sent both operations, the actual filesystem state is
+      // authoritative: a missing path is a create operation; edit anchors are ignored.
       if (createContent.length > MAX_CREATE_CONTENT_CHARS || Buffer.byteLength(createContent, 'utf8') > MAX_FILE_EDIT_BYTES || createContent.includes('\0')) {
         throw new Error('New file content exceeds the 50 MB limit or contains binary data.');
       }
@@ -482,10 +731,9 @@ export class ToolRegistry {
       }
     }
 
-    if (typeof createContent === 'string') {
-      throw new Error('Full-file replacement is disabled. Existing files must be changed with targeted edits.');
-    }
-    if (!Array.isArray(edits)) {
+    // For an existing path, targeted edits take precedence if a provider
+    // accidentally included createContent as an extra operation field.
+    if (!Array.isArray(edits) || edits.length === 0) {
       throw new Error('Full-file content replacement is blocked. Use edits: [{ oldText, newText }] with exact unique snippets.');
     }
 
@@ -603,7 +851,7 @@ export class ToolRegistry {
     this.onEditProgress?.(progress);
   }
 
-  async runCommand(command: string, reason: string, signal?: AbortSignal): Promise<ToolResult> {
+  async runCommand(command: string, reason: string, signal?: AbortSignal, cwdPath?: string): Promise<ToolResult> {
     if (typeof command !== 'string' || !command.trim()) throw new Error('Command is empty.');
     if (command.length > MAX_COMMAND_LENGTH) throw new Error(`Command exceeds the ${MAX_COMMAND_LENGTH.toLocaleString()} character limit.`);
     validateCommand(command);
@@ -628,7 +876,14 @@ export class ToolRegistry {
       };
     }
     if (signal?.aborted) throw new Error('Request cancelled before the approved terminal command could start.');
-    const cwd = root.fsPath;
+    let cwd = root.fsPath;
+    if (cwdPath) {
+      const cwdUri = safeUri(cwdPath, root);
+      await assertPathInsideWorkspace(cwdUri, root);
+      const cwdStat = await vscode.workspace.fs.stat(cwdUri);
+      if (!(cwdStat.type & vscode.FileType.Directory)) throw new Error('The terminal working path must be a workspace directory.');
+      cwd = cwdUri.fsPath;
+    }
     const shell = process.platform === 'win32' ? undefined : '/bin/bash';
     try {
       const result = await execAsync(buildSafeCommand(command), {

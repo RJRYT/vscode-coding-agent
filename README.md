@@ -1,6 +1,4 @@
-## Latest update — v0.2.23
-
-The runtime now loads the freshly compiled `dist/src` entry point. Tool argument compatibility and the packaged runtime/resource paths have been aligned.
+## Latest update — v0.2.24
 
 Fixes workspace tool pagination argument mismatches, merges partial streamed tool-argument objects without losing edit fields, improves escaped-anchor recovery and replacement alias normalization, and adds rich Markdown rendering including tables, nested lists, and task lists.
 
@@ -162,3 +160,12 @@ This release extracts the webview and engineering prompt into runtime resources,
 - File read, edit, and resulting-file byte limits are aligned at 50 MB.
 - `newText` validation now distinguishes a missing/non-string value from an oversized string and reports the actual received character count. Empty `newText` remains valid for deleting an exact matched anchor.
 - Added regression coverage for a replacement larger than 5 million characters.
+
+
+## Workspace and Git tools (0.2.24)
+
+Nemotron Agent includes dedicated workspace lifecycle tools for creating folders, deleting files, and recursively deleting folders. Destructive actions show an approval request before execution; deletion is workspace-scoped, refuses the workspace root, and uses the VS Code trash option when supported.
+
+The Git manager supports status, unstaged/staged diffs, history, branch listing/creation/switching/deletion/renaming, staging/unstaging, commits, push/pull/fetch, merge/rebase/cherry-pick/revert, soft/mixed/hard reset, stash operations, tags, remote management, blame, worktrees, clean previews, and repository initialization. Read-only actions run directly; mutating actions require approval. Destructive `reset_hard` and `clean` require an explicit `force: true`; force push uses `--force-with-lease`. Git is invoked with argument arrays (not through a shell), remote URLs containing embedded credentials are rejected, and diff/stage operations exclude protected secret paths by default.
+
+File-edit arguments are normalized to support common provider variations, including top-level single-edit `{ path, oldText, newText }`, `filePath`/`file_path`, and `description`/`reason` aliases. If a provider accidentally sends both create and edit payloads, the registry chooses based on the actual path: existing files use targeted edits; missing files use createContent. It never overwrites an existing file with createContent. Generic provider metadata such as `description`, `oldText`, `limit`, and `offset` is tolerated when attached to unrelated tools, while operation-specific unknown arguments remain rejected.
