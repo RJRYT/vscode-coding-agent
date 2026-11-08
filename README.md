@@ -183,3 +183,9 @@ You can revoke all remembered command permissions at any time from **Settings â†
 - Auto mode, Thinking, Memory, and Auto-save controls now synchronize immediately between the composer and Settings.
 - Partial configuration responses update only the setting they contain, preventing unrelated toggles from changing unexpectedly.
 - Memory changes are acknowledged with the persisted configuration state.
+
+## 0.2.27
+
+- Fixed the Auto mode composer toggle by removing unsupported native confirmation dialogs from the VS Code webview.
+- Centralized Auto mode changes so the composer button and Settings checkbox update immediately and stay synchronized with the persisted extension setting.
+- Added an explicit pressed state for accessibility and reliable visual synchronization after configuration acknowledgements.

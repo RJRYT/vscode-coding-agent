@@ -293,9 +293,21 @@ function send(){const text=input.value.trim();if(!text||busy)return;if(currentSc
 sendBtn.onclick=send;stopBtn.onclick=()=>vscode.postMessage({type:'stop'});document.getElementById('newBtn').onclick=startNewChat;document.getElementById('listNewBtn').onclick=startNewChat;document.getElementById('settingsBtn').onclick=()=>showView('settings');backToList.onclick=()=>showView('list');document.getElementById('keyBtn').onclick=()=>vscode.postMessage({type:'setKey'});document.getElementById('clearKeyBtn').onclick=()=>{if(confirm('Remove the saved NVIDIA API key?'))vscode.postMessage({type:'clearKey'})};document.getElementById('chatSearch').addEventListener('input',renderChats);input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}if(e.key==='@'||(e.shiftKey&&e.key==='2')){e.preventDefault();showContextMenu()}});input.addEventListener('input',()=>{const val=input.value;if(!val.endsWith('@')&&!val.includes(' @'))hideContextMenu()});document.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>{input.value=b.dataset.prompt;input.focus()});
 function setToggleState(key,value){applyConfig({[key]:!!value})}
 const autoModeBtn=document.getElementById('autoModeBtn');
+const settingAutoMode=document.getElementById('settingAutoMode');
+function setAutoMode(enabled){
+  const on=!!enabled;
+  // Update the webview immediately; the extension host will confirm the
+  // persisted value with configUpdated. Do not use window.confirm here:
+  // native confirmation dialogs can be unavailable/blocked in VS Code webviews.
+  config={...config,autoMode:on};
+  if(autoModeBtn){autoModeBtn.classList.toggle('on',on);autoModeBtn.setAttribute('aria-pressed',String(on))}
+  if(settingAutoMode)settingAutoMode.checked=on;
+  vscode.postMessage({type:'toggleAutoMode',enabled:on});
+}
 autoModeBtn.type='button';
-autoModeBtn.onclick=()=>{const on=!config.autoMode;if(on&&!confirm('Enable full Auto mode? File changes/deletions, terminal commands, and Git mutations will run without approval prompts. Workspace trust and safety restrictions remain active.'))return;setToggleState('autoMode',on);vscode.postMessage({type:'toggleAutoMode',enabled:on})};
-document.getElementById('settingAutoMode').onchange=e=>{const on=!!e.target.checked;if(on&&!confirm('Enable full Auto mode? File changes/deletions, terminal commands, and Git mutations will run without approval prompts. Workspace trust and safety restrictions remain active.')){setToggleState('autoMode',config.autoMode);return}setToggleState('autoMode',on);vscode.postMessage({type:'toggleAutoMode',enabled:on})};
+autoModeBtn.setAttribute('aria-pressed',String(!!config.autoMode));
+autoModeBtn.addEventListener('click',()=>setAutoMode(!config.autoMode));
+settingAutoMode.addEventListener('change',e=>setAutoMode(!!e.currentTarget.checked));
 const thinkBtn=document.getElementById('thinkBtn');
 thinkBtn.type='button';
 thinkBtn.onclick=()=>{const on=!config.reasoning;setToggleState('reasoning',on);vscode.postMessage({type:'toggleReasoning',enabled:on})};
@@ -310,7 +322,7 @@ config={...config,...c};
 if(Object.prototype.hasOwnProperty.call(c,'reasoning')){sReasoning.checked=!!c.reasoning;thinkBtn.classList.toggle('on',!!c.reasoning)}
 if(Object.prototype.hasOwnProperty.call(c,'memoryEnabled'))sMemory.checked=!!c.memoryEnabled;
 if(Object.prototype.hasOwnProperty.call(c,'autoSaveChats'))sAuto.checked=!!c.autoSaveChats;
-if(Object.prototype.hasOwnProperty.call(c,'autoMode')){const autoBtn=document.getElementById('autoModeBtn');if(autoBtn)autoBtn.classList.toggle('on',!!c.autoMode);const autoSetting=document.getElementById('settingAutoMode');if(autoSetting)autoSetting.checked=!!c.autoMode}
+if(Object.prototype.hasOwnProperty.call(c,'autoMode')){const autoBtn=document.getElementById('autoModeBtn');if(autoBtn){autoBtn.classList.toggle('on',!!c.autoMode);autoBtn.setAttribute('aria-pressed',String(!!c.autoMode))}const autoSetting=document.getElementById('settingAutoMode');if(autoSetting)autoSetting.checked=!!c.autoMode}
 if(c.persona!==undefined)setSelectValue(sPersona,c.persona);
 if(c.tone!==undefined)setSelectValue(sTone,c.tone);
 if(c.expertise!==undefined&&Array.isArray(c.expertise))setSelectValue(sExpertise,c.expertise.join(', '));

@@ -2,7 +2,7 @@
   "name": "nemotron-coding-agent",
   "displayName": "Nemotron Coding Agent",
   "description": "A workspace-aware coding agent powered by NVIDIA Nemotron, with optional Auto mode and granular command permissions.",
-  "version": "0.2.26",
+  "version": "0.2.27",
   "icon": "media/extension-icon.png",
   "publisher": "rjryt",
   "license": "SEE LICENSE IN LICENSE",
