@@ -176,3 +176,10 @@ File-edit arguments are normalized to support common provider variations, includ
 Auto mode can be toggled from the composer or Settings. When enabled, file/folder creation, editing, deletion, terminal commands, and Git mutations do not show approval prompts. Workspace trust, path boundaries, secret-file protections, command validation, and required force flags remain active. For those command operations, **Allow** remembers the exact command in the current workspace, **Allow once** authorizes only the current operation, and **Cancel** stops it. Remembered permissions are stored as hashes in VS Code extension global state.
 
 You can revoke all remembered command permissions at any time from **Settings → Behavior → Clear permissions**.
+
+
+## v0.2.26 settings fixes
+
+- Auto mode, Thinking, Memory, and Auto-save controls now synchronize immediately between the composer and Settings.
+- Partial configuration responses update only the setting they contain, preventing unrelated toggles from changing unexpectedly.
+- Memory changes are acknowledged with the persisted configuration state.

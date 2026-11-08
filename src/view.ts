@@ -247,7 +247,6 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
           type: 'configUpdated',
           config: {
             persona: config.persona,
-            memoryEnabled: config.memoryEnabled,
             tone: vscode.workspace.getConfiguration('nemotronAgent').get<string>('tone', ''),
             expertise: config.expertise,
             responseLanguage: config.responseLanguage,
@@ -274,7 +273,7 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
             baseUrl: config.baseUrl,
             maxTokens: config.maxTokens,
             maxToolRounds: config.maxToolRounds,
-            autoSaveChats: config.autoSaveChats,
+            ...(typeof message.autoSaveChats === 'boolean' ? { autoSaveChats: config.autoSaveChats } : {}),
           },
         });
         break;
@@ -302,12 +301,14 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         await cfg.update('autoMode', enabled, true);
         const config = getNemotronAgentConfig();
         this.post({ type: 'configUpdated', config: { autoMode: config.autoMode } });
-        this.post({ type: 'status', text: enabled ? 'Auto mode enabled · workspace file operations will not ask for approval. Terminal and Git mutations still require approval.' : 'Auto mode disabled · workspace file operations require approval.' });
+        this.post({ type: 'status', text: enabled ? 'Auto mode enabled · tool operations will run without approval prompts, subject to workspace and safety restrictions.' : 'Auto mode disabled · approval prompts are required for protected operations.' });
         break;
       }
       case 'toggleMemory': {
         const cfg = vscode.workspace.getConfiguration('nemotronAgent');
         await cfg.update('memoryEnabled', !!message.enabled, true);
+        const config = getNemotronAgentConfig();
+        this.post({ type: 'configUpdated', config: { memoryEnabled: config.memoryEnabled } });
         break;
       }
       case 'toggleReasoning': {
