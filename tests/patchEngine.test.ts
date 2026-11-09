@@ -20,10 +20,24 @@ describe('applyExactTextPatches', () => {
     expect(result.text).toBe('function greet() {\r\n  return "hi";\r\n}\r\n');
   });
 
-  it('does not fuzzy-match indentation or changed source text', () => {
+  it('does not match anchors whose source tokens have changed', () => {
     expect(() => applyExactTextPatches('  const value = 1;', [
-      { oldText: 'const  value = 1;', newText: 'const value = 2;' },
+      { oldText: 'const value = 2;', newText: 'const value = 3;' },
     ])).toThrow(/could not be matched in the current file snapshot/);
+  });
+
+  it('matches a unique source anchor when only internal formatting whitespace differs', () => {
+    const source = 'app.use(express.urlencoded({extended:true,limit:"10mb"}));';
+    const result = applyExactTextPatches(source, [
+      { oldText: 'app.use(express.urlencoded({ extended: true, limit: "10mb" }));', newText: 'app.use(express.urlencoded({ extended: true, limit: "20mb" }));' },
+    ]);
+    expect(result.text).toBe('app.use(express.urlencoded({ extended: true, limit: "20mb" }));');
+  });
+
+  it('does not token-normalize an ambiguous anchor', () => {
+    expect(() => applyExactTextPatches('a(b);\na (b);', [
+      { oldText: 'a ( b );', newText: 'c();' },
+    ])).toThrow(/ambiguous/);
   });
 
   it('rejects anchors that do not match', () => {

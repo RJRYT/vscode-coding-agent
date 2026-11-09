@@ -189,3 +189,7 @@ You can revoke all remembered command permissions at any time from **Settings â†
 - Fixed the Auto mode composer toggle by removing unsupported native confirmation dialogs from the VS Code webview.
 - Centralized Auto mode changes so the composer button and Settings checkbox update immediately and stay synchronized with the persisted extension setting.
 - Added an explicit pressed state for accessibility and reliable visual synchronization after configuration acknowledgements.
+## 0.2.28
+
+- Safer formatting-only anchor recovery and better stale-anchor diagnostics.
+- Quiet successful edit completion feedback in Auto mode.

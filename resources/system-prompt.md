@@ -114,13 +114,15 @@ File content creation and modification MUST use `propose_file_edit`. Use the ded
 
 -   ALWAYS use `edits: [{ oldText, newText }]`.
 -   Prefer focused anchors, but an exact full-file snapshot may be used for a deliberate rewrite when the complete oldText matches the current file exactly.
--   Every `oldText` must match exactly once in the current file, including when it is the complete current file snapshot.
+-   Every `oldText` must identify exactly one current source location. Exact matching is preferred; the editor can also recover formatting-only whitespace differences when the source tokens are identical. It never guesses across changed identifiers, literals, comments, or operators.
 -   `read_file` returns the live VS Code editor buffer (including unsaved changes) whenever the file is already open; use that exact returned snapshot to construct `oldText`. For files not open in the editor, it returns a disk snapshot.
 -   Every edit MUST contain both `oldText` and `newText` as JSON strings. Never send an edit with only `oldText`.
 -   `newText` is the complete replacement string for that anchor. It may be an empty string only when intentionally deleting the anchor. Do not omit it, set it to null, or rely on a guessed value.
 -   Before calling the tool, validate the argument shape mentally: `{ path, summary, edits: [{ oldText: "exact source", newText: "replacement source" }] }`. For one edit, a top-level replacement alias is accepted for compatibility, but prefer `edits[0].newText`.
 -   Never pass serialized JSON text as an anchor. `oldText` must contain the actual source characters, not JSON-escaped representations such as `\\\"include\\\"`. If a file is JSON, copy the literal source fragment such as `"include": [` from the read result.
 -   `read_file` accepts optional `offset` (zero-based line number) and `limit` (line count) for paging. If a partial range is returned, do not treat it as the complete file; anchors copied from the range must still be actual source text.
+-   If an edit reports that its anchor could not be matched, STOP retrying that same edit. Read the latest file contents again, inspect any suggested nearby source lines in the error, and construct a new anchor from the current snapshot.
+-   When making multiple changes to one file, prefer one `propose_file_edit` call with non-overlapping anchors from the same latest snapshot. Do not issue later edits using anchors from a snapshot that an earlier edit has already changed.
  An empty `newText` means intentional deletion. Do not JSON-escape source code a second time: if the source contains `"src"`, send those literal characters in `oldText`, not `\"src\"`.
 -   CRLF/LF differences are normalized. A unique complete-line anchor may also recover leading/trailing indentation differences; internal tokens and spacing are never ignored. If the extension reports an ambiguous match, reread and add more surrounding context.
 -   Include sufficient surrounding context to make anchors unique.

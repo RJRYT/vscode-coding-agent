@@ -141,6 +141,125 @@ function findWhitespaceEquivalent(source: string, anchor: string, replacement: s
   };
 }
 
+
+interface SourceToken { value: string; start: number; end: number }
+
+/**
+ * Tokenize source without retaining insignificant whitespace. Tokens themselves
+ * (including comments and quoted strings) must still match byte-for-byte. This
+ * recovers formatting-only differences without fuzzy-matching changed code.
+ */
+function sourceTokens(value: string): SourceToken[] {
+  const tokens: SourceToken[] = [];
+  const operators = ['>>>=','===','!==','>>>','**=','??=','&&=','||=','...','=>','==','!=','<=','>=','++','--','&&','||','??','?.','+=','-=','*=','/=','%=','<<','>>','**'];
+  let index = 0;
+  while (index < value.length) {
+    const start = index;
+    const char = value[index];
+    if (/\s/.test(char)) { index++; continue; }
+
+    if (char === '/' && (value[index + 1] === '/' || value[index + 1] === '*')) {
+      if (value[index + 1] === '/') {
+        index += 2;
+        while (index < value.length && value[index] !== '\n' && value[index] !== '\r') index++;
+      } else {
+        index += 2;
+        while (index < value.length && !(value[index] === '*' && value[index + 1] === '/')) index++;
+        index = Math.min(value.length, index + 2);
+      }
+      tokens.push({ value: value.slice(start, index), start, end: index });
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === '`') {
+      const quote = char;
+      index++;
+      while (index < value.length) {
+        if (value[index] === '\\') { index = Math.min(value.length, index + 2); continue; }
+        if (value[index] === quote) { index++; break; }
+        index++;
+      }
+      tokens.push({ value: value.slice(start, index), start, end: index });
+      continue;
+    }
+
+    if (/[$_\p{L}]/u.test(char)) {
+      index++;
+      while (index < value.length && /[$_\p{L}\p{N}]/u.test(value[index])) index++;
+      tokens.push({ value: value.slice(start, index), start, end: index });
+      continue;
+    }
+
+    if (/\d/.test(char)) {
+      index++;
+      while (index < value.length && /[\w.]/.test(value[index])) index++;
+      tokens.push({ value: value.slice(start, index), start, end: index });
+      continue;
+    }
+
+    const operator = operators.find((candidate) => value.startsWith(candidate, index));
+    index += operator?.length ?? 1;
+    tokens.push({ value: value.slice(start, index), start, end: index });
+  }
+  return tokens;
+}
+
+function findTokenEquivalent(source: string, anchor: string, replacement: string): AnchorMatch | undefined {
+  // Keep the fallback bounded; exact and line-based matching remain available
+  // for larger files without allocating a large token index.
+  if (source.length > 5_000_000 || anchor.length > 200_000) return undefined;
+  const sourceTokensList = sourceTokens(source);
+  const anchorTokens = sourceTokens(anchor);
+  // A single token (especially a short identifier/comment) is too broad for
+  // formatting recovery; require a meaningful multi-token anchor.
+  if (anchorTokens.length < 2 || sourceTokensList.length < anchorTokens.length) return undefined;
+
+  // KMP keeps matching linear even when the first token is common (e.g. `const`).
+  const prefix = new Array<number>(anchorTokens.length).fill(0);
+  for (let i = 1, matched = 0; i < anchorTokens.length; i++) {
+    while (matched > 0 && anchorTokens[i].value !== anchorTokens[matched].value) matched = prefix[matched - 1];
+    if (anchorTokens[i].value === anchorTokens[matched].value) matched++;
+    prefix[i] = matched;
+  }
+
+  let matched = 0;
+  let matchStart = -1;
+  for (let i = 0; i < sourceTokensList.length; i++) {
+    while (matched > 0 && sourceTokensList[i].value !== anchorTokens[matched].value) matched = prefix[matched - 1];
+    if (sourceTokensList[i].value === anchorTokens[matched].value) matched++;
+    if (matched === anchorTokens.length) {
+      if (matchStart >= 0) throw new Error('ambiguous');
+      matchStart = i - anchorTokens.length + 1;
+      matched = prefix[matched - 1];
+    }
+  }
+  if (matchStart < 0) return undefined;
+  const first = sourceTokensList[matchStart];
+  const last = sourceTokensList[matchStart + anchorTokens.length - 1];
+  return {
+    start: first.start,
+    end: last.end,
+    replacementText: withNewlineStyle(replacement, dominantNewline(source)),
+    mode: 'token-whitespace-normalized',
+  };
+}
+
+function closestSourceContext(source: string, anchor: string): string[] {
+  const anchorTokens = sourceTokens(anchor).map((token) => token.value);
+  if (!anchorTokens.length) return [];
+  const lines = lineRecords(source);
+  const scored = lines.map((line, index) => {
+    const tokens = sourceTokens(line.text).map((token) => token.value);
+    let common = 0;
+    while (common < Math.min(tokens.length, anchorTokens.length) && tokens[common] === anchorTokens[common]) common++;
+    const overlap = tokens.filter((token) => anchorTokens.some((anchorToken) => token === anchorToken || token.startsWith(anchorToken) || anchorToken.startsWith(token))).length;
+    return { index, line: line.text.trim(), score: common * 3 + overlap };
+  }).filter((item) => item.line && item.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, 3);
+  return scored.map((item) => `${item.index + 1}: ${item.line.slice(0, 220)}`);
+}
+
 function resolveAnchor(source: string, oldText: string, newText: string): AnchorMatch | undefined {
   try {
     const exact = findUnique(source, oldText);
@@ -182,16 +301,24 @@ function resolveAnchor(source: string, oldText: string, newText: string): Anchor
 
   const whitespace = findWhitespaceEquivalent(source, oldText, newText);
   if (whitespace) return whitespace;
+  try {
+    const tokenEquivalent = findTokenEquivalent(source, oldText, newText);
+    if (tokenEquivalent) return tokenEquivalent;
+  } catch { throw new Error('ambiguous'); }
   if (decoded) {
     const decodedWhitespace = findWhitespaceEquivalent(source, decoded, newText);
     if (decodedWhitespace) return { ...decodedWhitespace, mode: 'json-escape-and-whitespace-normalized' };
+    try {
+      const decodedTokens = findTokenEquivalent(source, decoded, newText);
+      if (decodedTokens) return { ...decodedTokens, mode: 'json-escape-and-token-whitespace-normalized' };
+    } catch { throw new Error('ambiguous'); }
   }
   return undefined;
 }
 
 /**
  * Resolve exact, unique text anchors against one immutable source snapshot.
- * Only exact, line-ending, JSON-escape, and conservative complete-line whitespace recovery are allowed. Ambiguous anchors are rejected.
+ * Only exact, line-ending, JSON-escape, complete-line whitespace, and unique token-preserving whitespace recovery are allowed. Ambiguous anchors are rejected.
  */
 export function applyExactTextPatches(source: string, changes: TextPatch[]): PatchResult {
   if (!Array.isArray(changes) || changes.length === 0) {
@@ -240,8 +367,10 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
     }
     if (!match) {
       const firstLine = change.oldText.split(/\r?\n/, 1)[0].trim().slice(0, 100);
+      const nearby = closestSourceContext(source, change.oldText);
+      const contextHint = nearby.length ? ` Closest current source lines (line number: text):\n${nearby.join('\n')}` : '';
       throw new Error(
-        `Edit ${index + 1} could not be matched in the current file snapshot. Anchor preview: ${JSON.stringify(firstLine)}. The anchor may be JSON-escaped, formatted differently, or stale. Reread the file and copy the exact source text into oldText; do not include JSON escaping around source quotes.`
+        `Edit ${index + 1} could not be matched in the current file snapshot. Anchor preview: ${JSON.stringify(firstLine)}. Formatting-only whitespace differences are recovered automatically, but changed source tokens are never guessed. Reread the latest file and build a fresh anchor from its exact contents.${contextHint}`
       );
     }
     const { start, end, replacementText } = match;
