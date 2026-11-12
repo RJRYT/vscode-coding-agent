@@ -11,18 +11,14 @@ function mergeToolArgumentValues(previous: unknown, incoming: unknown): unknown 
   if (Array.isArray(previous) && Array.isArray(incoming)) {
     const merged = previous.slice();
     incoming.forEach((value, index) => {
-      merged[index] = index in merged
-        ? mergeToolArgumentValues(merged[index], value)
-        : value;
+      merged[index] = index in merged ? mergeToolArgumentValues(merged[index], value) : value;
     });
     return merged;
   }
   if (isJsonRecord(previous) && isJsonRecord(incoming)) {
     const merged: JsonRecord = { ...previous };
     for (const [key, value] of Object.entries(incoming)) {
-      merged[key] = key in merged
-        ? mergeToolArgumentValues(merged[key], value)
-        : value;
+      merged[key] = key in merged ? mergeToolArgumentValues(merged[key], value) : value;
     }
     return merged;
   }
@@ -175,7 +171,9 @@ export class ModelClient {
             const previousObject = parseArgumentObject(existing.function.arguments);
             const incomingObject = parseArgumentObject(argumentDelta);
             if (previousObject && incomingObject) {
-              existing.function.arguments = JSON.stringify(mergeToolArgumentValues(previousObject, incomingObject));
+              existing.function.arguments = JSON.stringify(
+                mergeToolArgumentValues(previousObject, incomingObject)
+              );
             } else {
               // Standard OpenAI streaming sends JSON string fragments. Keep
               // appending them until the complete argument document exists.

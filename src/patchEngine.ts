@@ -41,8 +41,12 @@ function normalizedOffsetToSource(source: string, normalizedOffset: number): num
   return source.length;
 }
 
-
-interface AnchorMatch { start: number; end: number; replacementText: string; mode: string }
+interface AnchorMatch {
+  start: number;
+  end: number;
+  replacementText: string;
+  mode: string;
+}
 
 function findUnique(source: string, anchor: string): { start: number; end: number } | undefined {
   if (!anchor) return undefined;
@@ -101,7 +105,11 @@ function lineRecords(value: string): Array<{ text: string; start: number; end: n
  * while ignoring only leading/trailing horizontal whitespace on each line.
  * Internal spaces, tokens, punctuation and line order must still match.
  */
-function findWhitespaceEquivalent(source: string, anchor: string, replacement: string): AnchorMatch | undefined {
+function findWhitespaceEquivalent(
+  source: string,
+  anchor: string,
+  replacement: string
+): AnchorMatch | undefined {
   const anchorLines = lineRecords(normalizeNewlines(anchor));
   const sourceLines = lineRecords(source);
   if (!anchorLines.length || anchorLines.some((line) => !line.text.trim())) return undefined;
@@ -122,17 +130,20 @@ function findWhitespaceEquivalent(source: string, anchor: string, replacement: s
   const first = sourceLines[matches[0]];
   const last = sourceLines[matches[0] + expected.length - 1];
   const replacementLines = normalizeNewlines(replacement).split('\n');
-  const adjusted = replacementLines.map((line, index) => {
-    if (!line.trim()) return line;
-    const anchorLine = anchorLines[Math.min(index, anchorLines.length - 1)].text;
-    const sourceLine = sourceLines[matches[0] + Math.min(index, expected.length - 1)].text;
-    const anchorIndent = anchorLine.match(/^[\t ]*/)?.[0] ?? '';
-    const sourceIndent = sourceLine.match(/^[\t ]*/)?.[0] ?? '';
-    if (anchorIndent === sourceIndent) return line;
-    if (anchorIndent && line.startsWith(anchorIndent)) return sourceIndent + line.slice(anchorIndent.length);
-    if (!anchorIndent) return sourceIndent + line;
-    return line;
-  }).join('\n');
+  const adjusted = replacementLines
+    .map((line, index) => {
+      if (!line.trim()) return line;
+      const anchorLine = anchorLines[Math.min(index, anchorLines.length - 1)].text;
+      const sourceLine = sourceLines[matches[0] + Math.min(index, expected.length - 1)].text;
+      const anchorIndent = anchorLine.match(/^[\t ]*/)?.[0] ?? '';
+      const sourceIndent = sourceLine.match(/^[\t ]*/)?.[0] ?? '';
+      if (anchorIndent === sourceIndent) return line;
+      if (anchorIndent && line.startsWith(anchorIndent))
+        return sourceIndent + line.slice(anchorIndent.length);
+      if (!anchorIndent) return sourceIndent + line;
+      return line;
+    })
+    .join('\n');
   return {
     start: first.start,
     end: last.end,
@@ -141,8 +152,11 @@ function findWhitespaceEquivalent(source: string, anchor: string, replacement: s
   };
 }
 
-
-interface SourceToken { value: string; start: number; end: number }
+interface SourceToken {
+  value: string;
+  start: number;
+  end: number;
+}
 
 /**
  * Tokenize source without retaining insignificant whitespace. Tokens themselves
@@ -151,12 +165,44 @@ interface SourceToken { value: string; start: number; end: number }
  */
 function sourceTokens(value: string): SourceToken[] {
   const tokens: SourceToken[] = [];
-  const operators = ['>>>=','===','!==','>>>','**=','??=','&&=','||=','...','=>','==','!=','<=','>=','++','--','&&','||','??','?.','+=','-=','*=','/=','%=','<<','>>','**'];
+  const operators = [
+    '>>>=',
+    '===',
+    '!==',
+    '>>>',
+    '**=',
+    '??=',
+    '&&=',
+    '||=',
+    '...',
+    '=>',
+    '==',
+    '!=',
+    '<=',
+    '>=',
+    '++',
+    '--',
+    '&&',
+    '||',
+    '??',
+    '?.',
+    '+=',
+    '-=',
+    '*=',
+    '/=',
+    '%=',
+    '<<',
+    '>>',
+    '**',
+  ];
   let index = 0;
   while (index < value.length) {
     const start = index;
     const char = value[index];
-    if (/\s/.test(char)) { index++; continue; }
+    if (/\s/.test(char)) {
+      index++;
+      continue;
+    }
 
     if (char === '/' && (value[index + 1] === '/' || value[index + 1] === '*')) {
       if (value[index + 1] === '/') {
@@ -175,8 +221,14 @@ function sourceTokens(value: string): SourceToken[] {
       const quote = char;
       index++;
       while (index < value.length) {
-        if (value[index] === '\\') { index = Math.min(value.length, index + 2); continue; }
-        if (value[index] === quote) { index++; break; }
+        if (value[index] === '\\') {
+          index = Math.min(value.length, index + 2);
+          continue;
+        }
+        if (value[index] === quote) {
+          index++;
+          break;
+        }
         index++;
       }
       tokens.push({ value: value.slice(start, index), start, end: index });
@@ -204,7 +256,11 @@ function sourceTokens(value: string): SourceToken[] {
   return tokens;
 }
 
-function findTokenEquivalent(source: string, anchor: string, replacement: string): AnchorMatch | undefined {
+function findTokenEquivalent(
+  source: string,
+  anchor: string,
+  replacement: string
+): AnchorMatch | undefined {
   // Keep the fallback bounded; exact and line-based matching remain available
   // for larger files without allocating a large token index.
   if (source.length > 5_000_000 || anchor.length > 200_000) return undefined;
@@ -217,7 +273,8 @@ function findTokenEquivalent(source: string, anchor: string, replacement: string
   // KMP keeps matching linear even when the first token is common (e.g. `const`).
   const prefix = new Array<number>(anchorTokens.length).fill(0);
   for (let i = 1, matched = 0; i < anchorTokens.length; i++) {
-    while (matched > 0 && anchorTokens[i].value !== anchorTokens[matched].value) matched = prefix[matched - 1];
+    while (matched > 0 && anchorTokens[i].value !== anchorTokens[matched].value)
+      matched = prefix[matched - 1];
     if (anchorTokens[i].value === anchorTokens[matched].value) matched++;
     prefix[i] = matched;
   }
@@ -225,7 +282,8 @@ function findTokenEquivalent(source: string, anchor: string, replacement: string
   let matched = 0;
   let matchStart = -1;
   for (let i = 0; i < sourceTokensList.length; i++) {
-    while (matched > 0 && sourceTokensList[i].value !== anchorTokens[matched].value) matched = prefix[matched - 1];
+    while (matched > 0 && sourceTokensList[i].value !== anchorTokens[matched].value)
+      matched = prefix[matched - 1];
     if (sourceTokensList[i].value === anchorTokens[matched].value) matched++;
     if (matched === anchorTokens.length) {
       if (matchStart >= 0) throw new Error('ambiguous');
@@ -248,13 +306,24 @@ function closestSourceContext(source: string, anchor: string): string[] {
   const anchorTokens = sourceTokens(anchor).map((token) => token.value);
   if (!anchorTokens.length) return [];
   const lines = lineRecords(source);
-  const scored = lines.map((line, index) => {
-    const tokens = sourceTokens(line.text).map((token) => token.value);
-    let common = 0;
-    while (common < Math.min(tokens.length, anchorTokens.length) && tokens[common] === anchorTokens[common]) common++;
-    const overlap = tokens.filter((token) => anchorTokens.some((anchorToken) => token === anchorToken || token.startsWith(anchorToken) || anchorToken.startsWith(token))).length;
-    return { index, line: line.text.trim(), score: common * 3 + overlap };
-  }).filter((item) => item.line && item.score > 0)
+  const scored = lines
+    .map((line, index) => {
+      const tokens = sourceTokens(line.text).map((token) => token.value);
+      let common = 0;
+      while (
+        common < Math.min(tokens.length, anchorTokens.length) &&
+        tokens[common] === anchorTokens[common]
+      )
+        common++;
+      const overlap = tokens.filter((token) =>
+        anchorTokens.some(
+          (anchorToken) =>
+            token === anchorToken || token.startsWith(anchorToken) || anchorToken.startsWith(token)
+        )
+      ).length;
+      return { index, line: line.text.trim(), score: common * 3 + overlap };
+    })
+    .filter((item) => item.line && item.score > 0)
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .slice(0, 3);
   return scored.map((item) => `${item.index + 1}: ${item.line.slice(0, 220)}`);
@@ -264,7 +333,9 @@ function resolveAnchor(source: string, oldText: string, newText: string): Anchor
   try {
     const exact = findUnique(source, oldText);
     if (exact) return { ...exact, replacementText: newText, mode: 'exact' };
-  } catch { throw new Error('ambiguous'); }
+  } catch {
+    throw new Error('ambiguous');
+  }
 
   const normalizedSource = normalizeNewlines(source);
   const normalizedAnchor = normalizeNewlines(oldText);
@@ -278,14 +349,18 @@ function resolveAnchor(source: string, oldText: string, newText: string): Anchor
         mode: 'line-ending-normalized',
       };
     }
-  } catch { throw new Error('ambiguous'); }
+  } catch {
+    throw new Error('ambiguous');
+  }
 
   const decoded = decodeEscapedAnchor(oldText);
   if (decoded) {
     try {
       const escaped = findUnique(source, decoded);
       if (escaped) return { ...escaped, replacementText: newText, mode: 'json-escape-normalized' };
-    } catch { throw new Error('ambiguous'); }
+    } catch {
+      throw new Error('ambiguous');
+    }
     try {
       const escapedNormalized = findUnique(normalizedSource, normalizeNewlines(decoded));
       if (escapedNormalized) {
@@ -296,7 +371,9 @@ function resolveAnchor(source: string, oldText: string, newText: string): Anchor
           mode: 'json-escape-and-line-ending-normalized',
         };
       }
-    } catch { throw new Error('ambiguous'); }
+    } catch {
+      throw new Error('ambiguous');
+    }
   }
 
   const whitespace = findWhitespaceEquivalent(source, oldText, newText);
@@ -304,14 +381,20 @@ function resolveAnchor(source: string, oldText: string, newText: string): Anchor
   try {
     const tokenEquivalent = findTokenEquivalent(source, oldText, newText);
     if (tokenEquivalent) return tokenEquivalent;
-  } catch { throw new Error('ambiguous'); }
+  } catch {
+    throw new Error('ambiguous');
+  }
   if (decoded) {
     const decodedWhitespace = findWhitespaceEquivalent(source, decoded, newText);
-    if (decodedWhitespace) return { ...decodedWhitespace, mode: 'json-escape-and-whitespace-normalized' };
+    if (decodedWhitespace)
+      return { ...decodedWhitespace, mode: 'json-escape-and-whitespace-normalized' };
     try {
       const decodedTokens = findTokenEquivalent(source, decoded, newText);
-      if (decodedTokens) return { ...decodedTokens, mode: 'json-escape-and-token-whitespace-normalized' };
-    } catch { throw new Error('ambiguous'); }
+      if (decodedTokens)
+        return { ...decodedTokens, mode: 'json-escape-and-token-whitespace-normalized' };
+    } catch {
+      throw new Error('ambiguous');
+    }
   }
   return undefined;
 }
@@ -338,7 +421,9 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
       typeof change.newText !== 'string' ||
       change.oldText.length === 0
     ) {
-      throw new Error(`Edit ${index + 1} must include non-empty oldText and string newText values.`);
+      throw new Error(
+        `Edit ${index + 1} must include non-empty oldText and string newText values.`
+      );
     }
     if (change.oldText === change.newText) {
       throw new Error(`Edit ${index + 1} does not change any text.`);
@@ -346,12 +431,19 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
     if (change.oldText.includes('\0') || change.newText.includes('\0')) {
       throw new Error(`Edit ${index + 1} contains a null byte.`);
     }
-    if (change.oldText.length > MAX_PATCH_TEXT_CHARS || change.newText.length > MAX_PATCH_TEXT_CHARS) {
-      throw new Error(`Edit ${index + 1} exceeds the ${MAX_PATCH_TEXT_CHARS.toLocaleString()}-character per-field limit.`);
+    if (
+      change.oldText.length > MAX_PATCH_TEXT_CHARS ||
+      change.newText.length > MAX_PATCH_TEXT_CHARS
+    ) {
+      throw new Error(
+        `Edit ${index + 1} exceeds the ${MAX_PATCH_TEXT_CHARS.toLocaleString()}-character per-field limit.`
+      );
     }
     totalPatchChars += change.oldText.length + change.newText.length;
     if (totalPatchChars > MAX_PATCH_TOTAL_CHARS) {
-      throw new Error(`Combined patch payload exceeds ${MAX_PATCH_TOTAL_CHARS.toLocaleString()} characters. Split the changes into separate tool calls.`);
+      throw new Error(
+        `Combined patch payload exceeds ${MAX_PATCH_TOTAL_CHARS.toLocaleString()} characters. Split the changes into separate tool calls.`
+      );
     }
     // An exact full-snapshot replacement is safe: it is still anchored to the
     // complete current contents and the caller revalidates the snapshot after approval.
@@ -361,20 +453,23 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
       match = resolveAnchor(source, change.oldText, change.newText);
     } catch (error) {
       if (error instanceof Error && error.message === 'ambiguous') {
-        throw new Error(`Edit ${index + 1} is ambiguous. Include more surrounding source context so the anchor matches exactly once.`);
+        throw new Error(
+          `Edit ${index + 1} is ambiguous. Include more surrounding source context so the anchor matches exactly once.`
+        );
       }
       throw error;
     }
     if (!match) {
       const firstLine = change.oldText.split(/\r?\n/, 1)[0].trim().slice(0, 100);
       const nearby = closestSourceContext(source, change.oldText);
-      const contextHint = nearby.length ? ` Closest current source lines (line number: text):\n${nearby.join('\n')}` : '';
+      const contextHint = nearby.length
+        ? ` Closest current source lines (line number: text):\n${nearby.join('\n')}`
+        : '';
       throw new Error(
         `Edit ${index + 1} could not be matched in the current file snapshot. Anchor preview: ${JSON.stringify(firstLine)}. Formatting-only whitespace differences are recovered automatically, but changed source tokens are never guessed. Reread the latest file and build a fresh anchor from its exact contents.${contextHint}`
       );
     }
     const { start, end, replacementText } = match;
-
 
     resolved.push({ ...change, newText: replacementText, start, end });
   }
@@ -382,7 +477,9 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
   const ordered = [...resolved].sort((a, b) => a.start - b.start);
   for (let index = 1; index < ordered.length; index++) {
     if (ordered[index].start < ordered[index - 1].end) {
-      throw new Error('Two proposed edits overlap. Combine them into one targeted edit or adjust their anchors.');
+      throw new Error(
+        'Two proposed edits overlap. Combine them into one targeted edit or adjust their anchors.'
+      );
     }
   }
 
@@ -394,7 +491,10 @@ export function applyExactTextPatches(source: string, changes: TextPatch[]): Pat
   return { text, patches: ordered };
 }
 
-export function createPatchPreview(patches: ResolvedTextPatch[], maxChars = 12_000): {
+export function createPatchPreview(
+  patches: ResolvedTextPatch[],
+  maxChars = 12_000
+): {
   oldPreview: string;
   newPreview: string;
 } {
@@ -403,7 +503,8 @@ export function createPatchPreview(patches: ResolvedTextPatch[], maxChars = 12_0
     for (let index = 0; index < patches.length; index++) {
       const block = `// Change ${index + 1} of ${patches.length}\n${patches[index][kind]}\n\n`;
       if (output.length + block.length > maxChars) {
-        output += '\n[Preview truncated. The full targeted changes will be applied after approval.]';
+        output +=
+          '\n[Preview truncated. The full targeted changes will be applied after approval.]';
         break;
       }
       output += block;

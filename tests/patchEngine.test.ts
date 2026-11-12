@@ -11,40 +11,45 @@ describe('applyExactTextPatches', () => {
     expect(result.text).toBe('before\nconst greeting = "hi";\nafter\nconst count = 2;\n');
   });
 
-
   it('matches anchors when only CRLF/LF line endings differ', () => {
     const source = 'function greet() {\r\n  return "hello";\r\n}\r\n';
     const result = applyExactTextPatches(source, [
-      { oldText: 'function greet() {\n  return "hello";\n}', newText: 'function greet() {\n  return "hi";\n}' },
+      {
+        oldText: 'function greet() {\n  return "hello";\n}',
+        newText: 'function greet() {\n  return "hi";\n}',
+      },
     ]);
     expect(result.text).toBe('function greet() {\r\n  return "hi";\r\n}\r\n');
   });
 
   it('does not match anchors whose source tokens have changed', () => {
-    expect(() => applyExactTextPatches('  const value = 1;', [
-      { oldText: 'const value = 2;', newText: 'const value = 3;' },
-    ])).toThrow(/could not be matched in the current file snapshot/);
+    expect(() =>
+      applyExactTextPatches('  const value = 1;', [
+        { oldText: 'const value = 2;', newText: 'const value = 3;' },
+      ])
+    ).toThrow(/could not be matched in the current file snapshot/);
   });
 
   it('matches a unique source anchor when only internal formatting whitespace differs', () => {
     const source = 'app.use(express.urlencoded({extended:true,limit:"10mb"}));';
     const result = applyExactTextPatches(source, [
-      { oldText: 'app.use(express.urlencoded({ extended: true, limit: "10mb" }));', newText: 'app.use(express.urlencoded({ extended: true, limit: "20mb" }));' },
+      {
+        oldText: 'app.use(express.urlencoded({ extended: true, limit: "10mb" }));',
+        newText: 'app.use(express.urlencoded({ extended: true, limit: "20mb" }));',
+      },
     ]);
     expect(result.text).toBe('app.use(express.urlencoded({ extended: true, limit: "20mb" }));');
   });
 
   it('does not token-normalize an ambiguous anchor', () => {
-    expect(() => applyExactTextPatches('a(b);\na (b);', [
-      { oldText: 'a ( b );', newText: 'c();' },
-    ])).toThrow(/ambiguous/);
+    expect(() =>
+      applyExactTextPatches('a(b);\na (b);', [{ oldText: 'a ( b );', newText: 'c();' }])
+    ).toThrow(/ambiguous/);
   });
 
   it('rejects anchors that do not match', () => {
     expect(() =>
-      applyExactTextPatches('const a = 1;', [
-        { oldText: 'const b = 2;', newText: 'const b = 3;' },
-      ])
+      applyExactTextPatches('const a = 1;', [{ oldText: 'const b = 2;', newText: 'const b = 3;' }])
     ).toThrow(/could not be matched/);
   });
 
@@ -73,16 +78,19 @@ describe('applyExactTextPatches', () => {
   it('supports patch anchors larger than 100 KB', () => {
     const anchor = 'x'.repeat(150_000) + 'UNIQUE';
     const source = `before\n${anchor}\nafter`;
-    expect(applyExactTextPatches(source, [{ oldText: anchor, newText: 'updated' }]).text).toBe('before\nupdated\nafter');
+    expect(applyExactTextPatches(source, [{ oldText: anchor, newText: 'updated' }]).text).toBe(
+      'before\nupdated\nafter'
+    );
   });
 
   it('allows a large focused replacement when it is not the entire file', () => {
     const anchor = 'x'.repeat(1800) + 'UNIQUE-ANCHOR';
     const source = 'header\n' + anchor + '\nfooter';
-    const result = applyExactTextPatches(source, [{ oldText: anchor, newText: 'updated focused section' }]);
+    const result = applyExactTextPatches(source, [
+      { oldText: anchor, newText: 'updated focused section' },
+    ]);
     expect(result.text).toContain('header\nupdated focused section\nfooter');
   });
-
 
   it('applies replacement text larger than the obsolete 5 million character cap', () => {
     const replacement = 'z'.repeat(5_000_001);
@@ -113,22 +121,27 @@ it('recovers anchors that were accidentally JSON-escaped by the model', () => {
 it('recovers indentation and trailing-whitespace-only differences on a unique line block', () => {
   const source = 'function run() {\n\t  const value = 1;   \n\t  return value;\n}';
   const result = applyExactTextPatches(source, [
-    { oldText: 'function run() {\n  const value = 1;\n  return value;\n}', newText: 'function run() {\n  const value = 2;\n  return value;\n}' },
+    {
+      oldText: 'function run() {\n  const value = 1;\n  return value;\n}',
+      newText: 'function run() {\n  const value = 2;\n  return value;\n}',
+    },
   ]);
   expect(result.text).toBe('function run() {\n\t  const value = 2;\n\t  return value;\n}');
 });
 
 it('rejects whitespace-normalized anchors when multiple blocks match', () => {
-  expect(() => applyExactTextPatches('  x();\n\tx();', [
-    { oldText: 'x();', newText: 'y();' },
-  ])).toThrow(/ambiguous/);
+  expect(() =>
+    applyExactTextPatches('  x();\n\tx();', [{ oldText: 'x();', newText: 'y();' }])
+  ).toThrow(/ambiguous/);
 });
-
 
 it('recovers multiply escaped JSON property anchors and escaped line breaks', () => {
   const source = '{\n  "include": [\n    "src/**/*.ts"\n  ]\n}';
   const result = applyExactTextPatches(source, [
-    { oldText: '\\\\\"include\\\\\": [\\n    \\\\\"src/**/*.ts\\\\\"', newText: '"include": [\n    "src/**/*.tsx"' },
+    {
+      oldText: '\\\\\"include\\\\\": [\\n    \\\\\"src/**/*.ts\\\\\"',
+      newText: '"include": [\n    "src/**/*.tsx"',
+    },
   ]);
   expect(result.text).toContain('"src/**/*.tsx"');
 });

@@ -24,5 +24,7 @@ export class AgentLogger implements vscode.Disposable {
     else this.output.appendLine(line);
   }
 
-  dispose(): void { this.output.dispose(); }
+  dispose(): void {
+    this.output.dispose();
+  }
 }

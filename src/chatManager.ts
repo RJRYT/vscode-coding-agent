@@ -16,16 +16,25 @@ export class ChatManager {
     };
   }
 
-  load(id: string): ChatData | undefined { return this.store.getChat(id); }
-  save(chat: ChatData): void { this.store.saveChat(chat); }
-  list() { return this.store.listChats(); }
-  delete(id: string): void { this.store.deleteChat(id); }
+  load(id: string): ChatData | undefined {
+    return this.store.getChat(id);
+  }
+  save(chat: ChatData): void {
+    this.store.saveChat(chat);
+  }
+  list() {
+    return this.store.listChats();
+  }
+  delete(id: string): void {
+    this.store.deleteChat(id);
+  }
 
   snapshot(chat: ChatData, messages: ChatMessage[]): ChatData {
     const firstUser = messages.find((message) => message.role === 'user')?.content;
     return {
       ...chat,
-      title: chat.title === 'New chat' && firstUser ? this.store.generateTitle(firstUser) : chat.title,
+      title:
+        chat.title === 'New chat' && firstUser ? this.store.generateTitle(firstUser) : chat.title,
       messages: [...messages],
       updatedAt: Date.now(),
     };

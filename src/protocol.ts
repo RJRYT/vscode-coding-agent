@@ -31,6 +31,10 @@ export interface PendingApproval {
 }
 
 export function isWebviewMessage(value: unknown): value is WebviewMessage {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
-    && typeof (value as Record<string, unknown>).type === 'string';
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    typeof (value as Record<string, unknown>).type === 'string'
+  );
 }

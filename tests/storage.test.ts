@@ -1,23 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
-vi.mock('vscode', () => ({ workspace: { workspaceFolders: [{ uri: { toString: () => 'file:///workspace' } }] } }));
+vi.mock('vscode', () => ({
+  workspace: { workspaceFolders: [{ uri: { toString: () => 'file:///workspace' } }] },
+}));
 import { ChatStore } from '../src/storage';
 
 function createStore() {
   const values = new Map<string, unknown>();
-  const context = { workspaceState: {
-    get: (key: string, fallback: unknown) => values.has(key) ? values.get(key) : fallback,
-    update: async (key: string, value: unknown) => { values.set(key, value); },
-  } };
+  const context = {
+    workspaceState: {
+      get: (key: string, fallback: unknown) => (values.has(key) ? values.get(key) : fallback),
+      update: async (key: string, value: unknown) => {
+        values.set(key, value);
+      },
+    },
+  };
   return { store: new ChatStore(context as never), values };
 }
 
 describe('ChatStore persistence', () => {
   it('persists, reloads, summarizes and deletes chats', async () => {
     const { store } = createStore();
-    const chat = { id: 'chat-1', title: 'Build UI', createdAt: 1, updatedAt: 2, messages: [
-      { role: 'user' as const, content: 'Build UI' },
-      { role: 'assistant' as const, content: 'I can help.' },
-    ] };
+    const chat = {
+      id: 'chat-1',
+      title: 'Build UI',
+      createdAt: 1,
+      updatedAt: 2,
+      messages: [
+        { role: 'user' as const, content: 'Build UI' },
+        { role: 'assistant' as const, content: 'I can help.' },
+      ],
+    };
     store.saveChat(chat);
     await store.flush();
     expect(store.getChat('chat-1')?.messages).toHaveLength(2);

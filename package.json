@@ -171,6 +171,8 @@
     "compile": "node scripts/clean-dist.cjs && tsc -p ./ && node scripts/copy-resources.cjs",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\" \"tests/**/*.{ts,js,json}\" \"*.{json,md,ts}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,json}\" \"tests/**/*.{ts,js,json}\" \"*.{json,md,ts}\"",
     "test": "vitest run",
     "vscode:prepublish": "npm run compile",
     "package": "vsce package"

@@ -11,11 +11,7 @@ import type { ApprovalPayload } from './config';
 import { isWebviewMessage } from './protocol';
 import type { PendingApproval, WebviewMessage } from './protocol';
 import { AgentLogger } from './logger';
-import {
-  collectWorkspaceContext,
-  normalizeContextOptions,
-  contextSources,
-} from './context';
+import { collectWorkspaceContext, normalizeContextOptions, contextSources } from './context';
 import type { ContextOptions } from './context';
 
 export class NemotronAgentView implements vscode.WebviewViewProvider {
@@ -38,8 +34,10 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
 
     const askApproval: AskApproval = (payload, signal) => this.askApproval(payload, signal);
 
-    this.tools = new ToolRegistry(askApproval, (progress) =>
-      this.post({ type: 'editProgress', ...progress }), this.logger,
+    this.tools = new ToolRegistry(
+      askApproval,
+      (progress) => this.post({ type: 'editProgress', ...progress }),
+      this.logger,
       () => getNemotronAgentConfig().autoMode
     );
     this.agent = new AgentLoop(this.context, this.tools, (message) => this.post(message));
@@ -104,12 +102,24 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         });
         const restoreId = typeof message.chatId === 'string' ? message.chatId : '';
         if (restoreId && this.agent?.currentChat === restoreId) {
-          this.post({ type: 'chatLoaded', id: restoreId, messages: this.agent?.currentMessages ?? [], busy: this.agent?.isBusy === true, waitingForApproval: this.pending.size > 0 });
+          this.post({
+            type: 'chatLoaded',
+            id: restoreId,
+            messages: this.agent?.currentMessages ?? [],
+            busy: this.agent?.isBusy === true,
+            waitingForApproval: this.pending.size > 0,
+          });
         } else if (restoreId && this.store?.getChat(restoreId)) {
           await this.agent?.loadChat(restoreId);
         }
         if (!restoreId && this.agent?.isBusy) {
-          this.post({ type: 'chatLoaded', id: null, messages: this.agent?.currentMessages ?? [], busy: true, waitingForApproval: this.pending.size > 0 });
+          this.post({
+            type: 'chatLoaded',
+            id: null,
+            messages: this.agent?.currentMessages ?? [],
+            busy: true,
+            waitingForApproval: this.pending.size > 0,
+          });
         }
         for (const pending of this.pending.values()) {
           this.post({ type: 'approval', ...pending.payload });
@@ -168,12 +178,7 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
           }
           const config = getNemotronAgentConfig();
           const contextOptions: ContextOptions = normalizeContextOptions(message.contextOptions);
-          await this.agent?.handleUserMessage(
-            message.text,
-            apiKey,
-            config,
-            contextOptions
-          );
+          await this.agent?.handleUserMessage(message.text, apiKey, config, contextOptions);
           this.currentChatId = this.agent?.currentChat ?? null;
           this.post({ type: 'chatsUpdated', chats: this.store ? this.store.listChats() : [] });
         }
@@ -237,10 +242,13 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         if (typeof persona === 'string') await cfg.update('persona', persona, true);
         if (typeof tone === 'string') await cfg.update('tone', tone, true);
         if (Array.isArray(expertise)) {
-          const safeExpertise = expertise.filter((item): item is string => typeof item === 'string').slice(0, 20);
+          const safeExpertise = expertise
+            .filter((item): item is string => typeof item === 'string')
+            .slice(0, 20);
           await cfg.update('expertise', safeExpertise, true);
         }
-        if (typeof responseLanguage === 'string') await cfg.update('responseLanguage', responseLanguage, true);
+        if (typeof responseLanguage === 'string')
+          await cfg.update('responseLanguage', responseLanguage, true);
         if (typeof codeStyle === 'string') await cfg.update('codeStyle', codeStyle, true);
         const config = getNemotronAgentConfig();
         this.post({
@@ -273,7 +281,9 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
             baseUrl: config.baseUrl,
             maxTokens: config.maxTokens,
             maxToolRounds: config.maxToolRounds,
-            ...(typeof message.autoSaveChats === 'boolean' ? { autoSaveChats: config.autoSaveChats } : {}),
+            ...(typeof message.autoSaveChats === 'boolean'
+              ? { autoSaveChats: config.autoSaveChats }
+              : {}),
           },
         });
         break;
@@ -301,7 +311,12 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         await cfg.update('autoMode', enabled, true);
         const config = getNemotronAgentConfig();
         this.post({ type: 'configUpdated', config: { autoMode: config.autoMode } });
-        this.post({ type: 'status', text: enabled ? 'Auto mode enabled · tool operations will run without approval prompts, subject to workspace and safety restrictions.' : 'Auto mode disabled · approval prompts are required for protected operations.' });
+        this.post({
+          type: 'status',
+          text: enabled
+            ? 'Auto mode enabled · tool operations will run without approval prompts, subject to workspace and safety restrictions.'
+            : 'Auto mode disabled · approval prompts are required for protected operations.',
+        });
         break;
       }
       case 'toggleMemory': {
@@ -327,7 +342,10 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
     return createHash('sha256').update(`${workspace}\0${payload.command}`).digest('hex');
   }
 
-  private async askApproval(payload: ApprovalPayload, signal?: AbortSignal): Promise<ApprovalDecision> {
+  private async askApproval(
+    payload: ApprovalPayload,
+    signal?: AbortSignal
+  ): Promise<ApprovalDecision> {
     if (signal?.aborted) return 'cancel';
     const permissionKey = this.commandPermissionKey(payload);
     if (permissionKey) {
@@ -337,7 +355,8 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         const pending = this.pending.get(payload.id);
-        if (pending?.onAbort && pending.signal) pending.signal.removeEventListener('abort', pending.onAbort);
+        if (pending?.onAbort && pending.signal)
+          pending.signal.removeEventListener('abort', pending.onAbort);
         this.pending.delete(payload.id);
         resolve('cancel');
         this.post({ type: 'approvalExpired', id: payload.id });
@@ -358,7 +377,8 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
     const pending = this.pending.get(id);
     if (!pending) return;
     clearTimeout(pending.timeout);
-    if (pending.onAbort && pending.signal) pending.signal.removeEventListener('abort', pending.onAbort);
+    if (pending.onAbort && pending.signal)
+      pending.signal.removeEventListener('abort', pending.onAbort);
     this.pending.delete(id);
     let resolvedDecision = decision;
     if (decision === 'allow') {
@@ -367,16 +387,27 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         const allowed = this.context.globalState.get<string[]>('nemotronAgent.allowedCommands', []);
         if (!allowed.includes(key)) {
           try {
-            await this.context.globalState.update('nemotronAgent.allowedCommands', [...allowed, key].slice(-500));
+            await this.context.globalState.update(
+              'nemotronAgent.allowedCommands',
+              [...allowed, key].slice(-500)
+            );
           } catch {
             resolvedDecision = 'allowOnce';
-            this.post({ type: 'status', text: 'Could not save the remembered permission; this command is allowed once only.' });
+            this.post({
+              type: 'status',
+              text: 'Could not save the remembered permission; this command is allowed once only.',
+            });
           }
         }
       }
     }
     pending.resolve(resolvedDecision);
-    this.post({ type: 'approvalResolved', id, approved: resolvedDecision !== 'cancel', decision: resolvedDecision });
+    this.post({
+      type: 'approvalResolved',
+      id,
+      approved: resolvedDecision !== 'cancel',
+      decision: resolvedDecision,
+    });
   }
 
   private getHtml(): string {

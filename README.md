@@ -102,25 +102,23 @@ Review every approved patch and command. Commands can still have effects beyond 
 
 ## Settings
 
-| Setting | Default | Purpose |
-|---|---|---|
-| `nemotronAgent.model` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | NVIDIA model ID |
-| `nemotronAgent.baseUrl` | `https://integrate.api.nvidia.com/v1` | OpenAI-compatible API base URL |
-| `nemotronAgent.maxTokens` | `16384` | Maximum output tokens per model turn; reasoning tokens count toward this limit |
-| `nemotronAgent.reasoning` | `true` | Enable Nemotron thinking |
-| `nemotronAgent.maxToolRounds` | `8` | Maximum consecutive tool-call rounds per request |
+| Setting                       | Default                                  | Purpose                                                                        |
+| ----------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------ |
+| `nemotronAgent.model`         | `nvidia/nemotron-3.5-super-vl-120b-a12b` | NVIDIA model ID                                                                |
+| `nemotronAgent.baseUrl`       | `https://integrate.api.nvidia.com/v1`    | OpenAI-compatible API base URL                                                 |
+| `nemotronAgent.maxTokens`     | `16384`                                  | Maximum output tokens per model turn; reasoning tokens count toward this limit |
+| `nemotronAgent.reasoning`     | `true`                                   | Enable Nemotron thinking                                                       |
+| `nemotronAgent.maxToolRounds` | `8`                                      | Maximum consecutive tool-call rounds per request                               |
 
 ## Current limitations
 
 This is not full Codex parity. Patch application is exact-anchor based and the approval diff is a preview, not a fully interactive Git diff editor. Pending approval UI can be restored after a webview refresh while the extension host remains alive; a full extension-host restart cancels in-flight operations. The workspace search is bounded and may skip large files. It targets desktop VS Code; browser-based VS Code environments may not support the Node child-process command runner.
-
 
 ## 0.2.1 stability update
 
 - Removed the runtime dependency on jsDelivr/remote Markdown scripts. The webview now renders basic Markdown locally, so its startup and button handlers do not depend on external network availability.
 - Added a visible in-panel error banner and extension-host error notifications for webview/runtime failures.
 - Registered the webview message listener before setting its HTML to avoid losing the initial ready handshake.
-
 
 ## Architecture and maintainability updates
 
@@ -138,11 +136,9 @@ No runtime dependency was added for validation or logging.
 
 New tests cover centralized tool validation and dispatch, chat metadata behavior, workspace-state persistence, model SSE parsing, and pluggable context sources. Run `npm test`, `npm run lint`, and `npm run compile` in an environment with the lockfile dependencies installed.
 
-
 ### 0.2.15 implementation notes
 
 This release extracts the webview and engineering prompt into runtime resources, introduces typed webview and tool argument boundaries, separates chat persistence/context collection/tool dispatch into focused modules, adds structured output-channel diagnostics, and expands unit coverage for storage, model streaming, validation, and dispatch. Failed new-file writes are compensated only when the file still matches the agent-created payload; failed editor saves attempt a guarded in-memory rollback.
-
 
 ## v0.2.17 reliability changes
 
@@ -152,7 +148,6 @@ This release extracts the webview and engineering prompt into runtime resources,
 - Exact full-file snapshot replacements are now allowed when `oldText` exactly matches the current file; the approval and stale-snapshot checks still apply.
 - Increased terminal command length to 20,000 characters, no automatic command timeout (the user can stop the active request), and output buffer to 10 MB.
 
-
 ## v0.2.18 large file-edit payload fix
 
 - Removed `maxLength` from the `oldText`, `newText`, and `createContent` tool JSON schema fields. Provider-side tool-schema validation no longer enforces the obsolete 5-million-character cap.
@@ -160,7 +155,6 @@ This release extracts the webview and engineering prompt into runtime resources,
 - File read, edit, and resulting-file byte limits are aligned at 50 MB.
 - `newText` validation now distinguishes a missing/non-string value from an oversized string and reports the actual received character count. Empty `newText` remains valid for deleting an exact matched anchor.
 - Added regression coverage for a replacement larger than 5 million characters.
-
 
 ## Workspace and Git tools (0.2.24)
 
@@ -170,13 +164,11 @@ The Git manager supports status, unstaged/staged diffs, history, branch listing/
 
 File-edit arguments are normalized to support common provider variations, including top-level single-edit `{ path, oldText, newText }`, `filePath`/`file_path`, and `description`/`reason` aliases. If a provider accidentally sends both create and edit payloads, the registry chooses based on the actual path: existing files use targeted edits; missing files use createContent. It never overwrites an existing file with createContent. Generic provider metadata such as `description`, `oldText`, `limit`, and `offset` is tolerated when attached to unrelated tools, while operation-specific unknown arguments remain rejected.
 
-
 ## Auto mode and permissions (v0.2.25)
 
 Auto mode can be toggled from the composer or Settings. When enabled, file/folder creation, editing, deletion, terminal commands, and Git mutations do not show approval prompts. Workspace trust, path boundaries, secret-file protections, command validation, and required force flags remain active. For those command operations, **Allow** remembers the exact command in the current workspace, **Allow once** authorizes only the current operation, and **Cancel** stops it. Remembered permissions are stored as hashes in VS Code extension global state.
 
 You can revoke all remembered command permissions at any time from **Settings → Behavior → Clear permissions**.
-
 
 ## v0.2.26 settings fixes
 
@@ -189,6 +181,7 @@ You can revoke all remembered command permissions at any time from **Settings �
 - Fixed the Auto mode composer toggle by removing unsupported native confirmation dialogs from the VS Code webview.
 - Centralized Auto mode changes so the composer button and Settings checkbox update immediately and stay synchronized with the persisted extension setting.
 - Added an explicit pressed state for accessibility and reliable visual synchronization after configuration acknowledgements.
+
 ## 0.2.28
 
 - Safer formatting-only anchor recovery and better stale-anchor diagnostics.

@@ -1,11 +1,5 @@
 import * as vscode from 'vscode';
-import {
-  ChatData,
-  ChatMemory,
-  ChatSummary,
-  MAX_CHATS,
-  MAX_MEMORY_FACTS,
-} from './config';
+import { ChatData, ChatMemory, ChatSummary, MAX_CHATS, MAX_MEMORY_FACTS } from './config';
 
 const STORAGE_KEY = 'nemotronAgent.chats';
 
@@ -41,7 +35,9 @@ export class ChatStore {
     const key = this.getChatsKey(workspaceId);
     const snapshot = chats.map((chat) => ({ ...chat, messages: [...chat.messages] }));
     const previous = this.writes.get(key) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(() => this.context.workspaceState.update(key, snapshot));
+    const next = previous
+      .catch(() => undefined)
+      .then(() => this.context.workspaceState.update(key, snapshot));
     this.writes.set(key, next);
     void next.catch(() => {
       if (this.writes.get(key) === next) this.writes.delete(key);
@@ -62,7 +58,9 @@ export class ChatStore {
         title: c.title,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
-        messageCount: c.messages.filter((message) => message.role === 'user' || message.role === 'assistant').length,
+        messageCount: c.messages.filter(
+          (message) => message.role === 'user' || message.role === 'assistant'
+        ).length,
         preview: c.messages
           .filter((m) => m.role === 'user' || m.role === 'assistant')
           .map((m) => m.content ?? '')

@@ -139,7 +139,6 @@ export class AgentLoop {
     }
   }
 
-
   private persistCurrentChat(): void {
     if (!this.currentChatId) return;
     const existing = this.chats.load(this.currentChatId);
@@ -172,12 +171,15 @@ export class AgentLoop {
       if (signal.aborted) throw new Error('The operation was aborted.');
       const requestHistory = [...this.history];
       if (contextBlock) {
-        const lastUser = requestHistory.map((message, index) => ({ message, index }))
-          .reverse().find(({ message }) => message.role === 'user');
-        if (lastUser) requestHistory[lastUser.index] = {
-          ...lastUser.message,
-          content: `${lastUser.message.content || ''}\n\n${contextBlock}`,
-        };
+        const lastUser = requestHistory
+          .map((message, index) => ({ message, index }))
+          .reverse()
+          .find(({ message }) => message.role === 'user');
+        if (lastUser)
+          requestHistory[lastUser.index] = {
+            ...lastUser.message,
+            content: `${lastUser.message.content || ''}\n\n${contextBlock}`,
+          };
       }
       const messages: ChatMessage[] = [{ role: 'system', content: system }, ...requestHistory];
       this.post({
@@ -213,7 +215,11 @@ export class AgentLoop {
 
       if (round === config.maxToolRounds) {
         for (const toolCall of response.toolCalls) {
-          this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: `Tool-round limit reached (${config.maxToolRounds}); this tool was not executed.` });
+          this.history.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: `Tool-round limit reached (${config.maxToolRounds}); this tool was not executed.`,
+          });
         }
         const notice = `I reached the configured tool-round limit (${config.maxToolRounds}). Ask me to continue.`;
         this.history.push({ role: 'assistant', content: notice });
@@ -228,13 +234,20 @@ export class AgentLoop {
         const name = toolCall.function.name || '';
         let args: unknown;
         try {
-          if (typeof toolCall.function?.arguments !== 'string') throw new Error('Tool arguments must be a JSON string.');
+          if (typeof toolCall.function?.arguments !== 'string')
+            throw new Error('Tool arguments must be a JSON string.');
           args = parseToolArguments(toolCall.function.arguments);
         } catch (error: unknown) {
           const result = `Invalid tool arguments: ${error instanceof Error ? error.message : String(error)}. The operation was not executed.`;
           this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
           this.persistCurrentChat();
-          this.post({ type: 'toolDone', id: toolCall.id, name: name || 'unknown', status: 'invalid', result });
+          this.post({
+            type: 'toolDone',
+            id: toolCall.id,
+            name: name || 'unknown',
+            status: 'invalid',
+            result,
+          });
           continue;
         }
         const signature = `${name}:${stableSerialize(args)}`;
@@ -243,7 +256,13 @@ export class AgentLoop {
           const result = `Duplicate tool call blocked. This exact operation was already attempted in this request. Previous outcome: ${previous}`;
           this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
           this.persistCurrentChat();
-          this.post({ type: 'toolDone', id: toolCall.id, name, status: 'invalid', result: result.slice(0, 1200) });
+          this.post({
+            type: 'toolDone',
+            id: toolCall.id,
+            name,
+            status: 'invalid',
+            result: result.slice(0, 1200),
+          });
           continue;
         }
         this.post({ type: 'toolStart', id: toolCall.id, name, args });
@@ -251,38 +270,61 @@ export class AgentLoop {
         let resultStatus: ToolResult['status'] = 'failed';
         try {
           const toolResult: ToolResult = await this.dispatcher.dispatch(name, args, signal);
-          if (signal.aborted) throw new Error('Request cancelled; no subsequent tools will be executed.');
+          if (signal.aborted)
+            throw new Error('Request cancelled; no subsequent tools will be executed.');
           result = toolResult.content;
           resultStatus = toolResult.status ?? (toolResult.isError ? 'failed' : 'success');
           seenCalls.set(signature, result.slice(0, 1000));
-          if (name === 'propose_file_edit' && !toolResult.isError && /successfully (applied|created)/i.test(result)) {
+          if (
+            name === 'propose_file_edit' &&
+            !toolResult.isError &&
+            /successfully (applied|created)/i.test(result)
+          ) {
             appliedFileEdit = true;
             seenCalls.clear(); // Workspace state changed; future calls must be reevaluated.
             this.post({ type: 'status', text: 'Changes saved · checking the updated code…' });
-          }
-          else if (name === 'run_terminal_command' && result.startsWith('Command execution result: SUCCESS')) {
+          } else if (
+            name === 'run_terminal_command' &&
+            result.startsWith('Command execution result: SUCCESS')
+          ) {
             seenCalls.clear(); // An approved command may have changed generated or workspace state.
           }
         } catch (error: unknown) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           result = `Tool error: ${errorMessage}`;
-          resultStatus = signal.aborted ? 'cancelled'
-            : /Unsupported tool name|arguments must|argument .* (invalid|exceeds)|Missing or invalid|required argument|Provide exactly one/i.test(errorMessage) ? 'invalid'
-            : /changed while approval|stale|became dirty|changed on disk/i.test(errorMessage) ? 'stale'
-            : /not supported|unsupported/i.test(errorMessage) ? 'unsupported'
-            : 'failed';
+          resultStatus = signal.aborted
+            ? 'cancelled'
+            : /Unsupported tool name|arguments must|argument .* (invalid|exceeds)|Missing or invalid|required argument|Provide exactly one/i.test(
+                  errorMessage
+                )
+              ? 'invalid'
+              : /changed while approval|stale|became dirty|changed on disk/i.test(errorMessage)
+                ? 'stale'
+                : /not supported|unsupported/i.test(errorMessage)
+                  ? 'unsupported'
+                  : 'failed';
           seenCalls.set(signature, result.slice(0, 1000));
         }
         this.history.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
         this.persistCurrentChat();
-        this.post({ type: 'toolDone', id: toolCall.id, name, status: resultStatus, result: result.slice(0, 1200) });
+        this.post({
+          type: 'toolDone',
+          id: toolCall.id,
+          name,
+          status: resultStatus,
+          result: result.slice(0, 1200),
+        });
       }
     }
   }
 
   private systemPrompt(config: NemotronAgentConfig): string {
     const folders = vscode.workspace.workspaceFolders ?? [];
-    const rootNames = folders.map((f) => f.name).filter(Boolean).join(', ') || 'No workspace folder name available';
+    const rootNames =
+      folders
+        .map((f) => f.name)
+        .filter(Boolean)
+        .join(', ') || 'No workspace folder name available';
     const personaLine = config.persona?.trim() ? config.persona.trim() : 'helpful coding assistant';
     const memoryLine = config.memoryEnabled
       ? 'Memory setting is enabled. Use only memory facts actually present in conversation history; no separate memory facts are injected by this extension.'
@@ -292,21 +334,25 @@ export class AgentLoop {
       WORKSPACE_NAME: rootNames,
       PERSONA: personaLine,
       TONE: config.tone?.trim() || 'balanced and natural',
-      EXPERTISE: config.expertise?.length ? config.expertise.join(', ') : 'general software development',
-      LANGUAGE: config.responseLanguage === 'auto' ? 'match the user’s language' : config.responseLanguage,
+      EXPERTISE: config.expertise?.length
+        ? config.expertise.join(', ')
+        : 'general software development',
+      LANGUAGE:
+        config.responseLanguage === 'auto' ? 'match the user’s language' : config.responseLanguage,
       CODE_STYLE: config.codeStyle || 'follow project conventions',
       MEMORY: memoryLine,
     });
   }
-
-
 }
 
 function stableSerialize(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableSerialize(record[key])}`).join(',')}}`;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableSerialize(record[key])}`)
+      .join(',')}}`;
   }
   return JSON.stringify(value) ?? String(value);
 }
