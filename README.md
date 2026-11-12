@@ -1,188 +1,210 @@
-## Latest update — v0.2.24
-
-Fixes workspace tool pagination argument mismatches, merges partial streamed tool-argument objects without losing edit fields, improves escaped-anchor recovery and replacement alias normalization, and adds rich Markdown rendering including tables, nested lists, and task lists.
-
 # Nemotron Coding Agent for VS Code
 
-A VS Code workspace coding agent powered by NVIDIA Nemotron 3.5 Super VL 120B A12B. It can inspect your project, search code, prepare targeted patches, and run approved checks.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.95%2B-blue)](https://code.visualstudio.com/)
+[![Version](https://img.shields.io/badge/version-0.2.28-blue)](https://github.com/RJRYT/vscode-coding-agent/releases/tag/v0.2.28)
 
-## 0.2.20 file-edit reliability update
+A workspace-aware coding assistant for VS Code, powered by NVIDIA Nemotron through an OpenAI-compatible API. Ask questions about your project, search and inspect workspace files, and propose code changes from the editor. Proposed file edits include a diff for review, and Git mutations require approval by default.
 
-- `read_file` now prefers the live VS Code text-document buffer for files already open, including unsaved editor changes. The patch tool and reader therefore work from the same in-memory snapshot.
-- Exact patch anchors now tolerate CRLF/LF-only differences. Replacement line endings are converted to the target file's dominant style; indentation and code content are never fuzzy-matched.
-- Tool argument normalization accepts common provider aliases such as `new_text`, `replacement`, `replacementText`, `after`, and `content`, while keeping `newText` canonical.
-- A missing replacement is still rejected rather than interpreted as an empty string, preventing accidental deletion. Explicit `newText: ""` remains a valid deletion.
-- Unmatched-anchor errors now explain that the current snapshot may have changed and instruct the agent to reread the file before rebuilding the patch.
+---
 
-## 0.2.15 maintainability and extensibility update
+## Features
 
-- Added a visible assistant loading state and clearer transitions while thinking, running tools, waiting for approval, applying edits, stopping, and completing requests.
-- Tool calls and their results are saved with the conversation and reconstructed when a chat is reopened. Chat persistence now uses an in-memory workspace cache and ordered writes to avoid dropping tool history during rapid updates.
-- File and command approval actions are docked directly above the composer. File changes are shown inline in the conversation as red removed lines and green added lines.
-- Pending approval cards are restored after a webview refresh while the extension host remains alive. Cancelling a request also clears its pending approval instead of leaving it stuck.
-- Relaxed command validation for common development and inspection commands while retaining explicit approval and blocks for destructive operations, shell chaining, inline scripts, and secret-file access.
-- Expanded exact-match editing limits to support larger focused changes. Dirty editor buffers can be patched against their live snapshot; the approval explains that existing unsaved changes will also be saved. Stale editor or disk changes still reject the patch.
-- Added dropdown personalization for persona, tone, technical focus, response language, and code style. These preferences are now injected into the system prompt.
+- **Streaming model chat** with optional reasoning and configurable model/API endpoint.
+- **Workspace tools** to list and search files, read file contents, and inspect the active editor.
+- **Optional editor context** for the active file, selected code, and VS Code diagnostics.
+- **Reviewable edits** based on exact text anchors, with an inline diff preview before changes are applied. Edits use the live editor buffer, preserve unsaved changes, and are saved and verified after approval.
+- **File and folder management** for creating and deleting workspace resources. Deletions use the operating-system trash when supported.
+- **Git manager** for repository status, diffs, history, branches, commits, remotes, stashes, tags, worktrees, and other common operations. Mutations require approval by default.
+- **Terminal commands** with an approval prompt by default. Commands run in the workspace with the current user's permissions.
+- **Chat history** saved in VS Code workspace state and available when you return to a conversation.
+- **Personalization** for persona, tone, expertise, response language, and code style.
+- **Auto mode** to skip per-operation approval prompts when explicitly enabled.
 
-## 0.2.2 webview startup fix
+---
 
-- Fixed a critical startup bug in the embedded webview script. HTML is now built with `String.raw`, preserving regular-expression and string escapes in the inline JavaScript. Without this, the Markdown link matcher became an invalid regular expression at runtime, preventing **all** UI event handlers from registering and leaving the chat-history screen unresponsive.
-- Added a separate startup error monitor that can display a visible banner even when the main webview script fails to parse.
-- Verified the generated webview in Chromium: ready handshake, New Chat, Settings, API-key action, Back navigation, Send, and loading a saved chat all work without browser runtime errors. An intentionally broken main script also triggers the visible startup error banner.
+## Setup
 
-## What is new in 0.2.0
+### Requirements
 
-- **Targeted edits instead of whole-file replacement.** Existing files are changed only through exact `oldText` → `newText` anchors. Every anchor must match exactly once. Missing, duplicated, overlapping, overly broad, or stale patches are rejected.
-- **Dirty-buffer preservation.** The agent patches the live editor snapshot, preserving existing unsaved changes. The approval card warns that approving the patch also saves those existing changes.
-- **Approval before changes.** The extension shows only the changed sections, asks for approval, then applies all edits as one undoable VS Code WorkspaceEdit transaction.
-- **Staged edit progress.** After approval, the UI shows patch staging, application, saving, and disk verification so there is visible activity instead of a silent pause.
-- **Post-save verification.** The extension checks the editor and saved file against the approved patch before reporting success.
-- **Single-screen chat navigation.** Chat history is shown as a separate screen. Opening or creating a chat hides the list; the back arrow returns to chats. The NVIDIA API key controls are in Settings.
-- NVIDIA streaming chat and reasoning, workspace browsing, text search, active editor context, and approved terminal checks remain available.
+- VS Code **1.95 or newer**.
+- An NVIDIA API key with access to the selected model and API endpoint.
+- A trusted workspace folder for editing files, running commands, and Git write operations.
+- Node.js **20 or newer** only if building the extension from source.
 
-## Requirements
+### Install from the VS Code Marketplace
 
-- VS Code 1.95 or newer.
-- Node.js 20 or newer for building the extension.
-- An NVIDIA API key with access to the configured NVIDIA NIM model.
-- An opened, trusted local workspace folder.
+Search for **Nemotron Coding Agent** (publisher: `rjryt`) in the VS Code Extensions view, or open:
 
-## Run in development
+[Nemotron Coding Agent on the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=rjryt.nemotron-coding-agent)
 
-1. Extract this project and open its folder in VS Code.
-2. Install dependencies:
+### Install from a VSIX
 
-   ```bash
-   npm install
-   ```
+Download the latest `.vsix` from [GitHub Releases](https://github.com/RJRYT/vscode-coding-agent/releases), then:
 
-3. Compile:
+1. Open the Extensions view in VS Code.
+2. Select **... → Install from VSIX...**.
+3. Choose the downloaded extension package.
 
-   ```bash
-   npm run compile
-   ```
+---
 
-4. Press `F5` to launch an Extension Development Host.
-5. Open a project folder, then open **Nemotron Agent** from the Activity Bar.
-6. Open Settings in the extension and set your NVIDIA API key. It is stored in VS Code Secret Storage.
+## Usage
 
-## Package as a VSIX
+### Quick start
 
-```bash
+1. Open a project folder in VS Code. Trust it if you want to enable file edits, terminal commands, and Git mutations.
+2. Open **Nemotron Agent** from the Activity Bar.
+3. Run **Nemotron Agent: Set NVIDIA API Key** and enter your key. It is stored using VS Code Secret Storage.
+4. Start a new chat. Use the context controls to include editor or diagnostic information when it is relevant.
+
+The extension sends your prompts and any context or tool results needed for a request to the configured model endpoint. Avoid including information you do not want sent to that provider.
+
+### Commands
+
+| Command                     | Title                                |
+| --------------------------- | ------------------------------------ |
+| `nemotronAgent.setApiKey`   | Nemotron Agent: Set NVIDIA API Key   |
+| `nemotronAgent.clearApiKey` | Nemotron Agent: Clear NVIDIA API Key |
+| `nemotronAgent.newChat`     | Nemotron Agent: New Chat             |
+| `nemotronAgent.focus`       | Nemotron Agent: Focus Chat           |
+
+### Configuration
+
+All settings live under **Settings → Extensions → Nemotron Agent**.
+
+| Setting                          | Default                                  | Purpose                                                                                         |
+| -------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `nemotronAgent.model`            | `nvidia/nemotron-3.5-super-vl-120b-a12b` | Model ID sent to the configured API.                                                            |
+| `nemotronAgent.baseUrl`          | `https://integrate.api.nvidia.com/v1`    | OpenAI-compatible API base URL.                                                                 |
+| `nemotronAgent.maxTokens`        | `16384`                                  | Maximum output tokens per model turn, including reasoning tokens.                               |
+| `nemotronAgent.reasoning`        | `true`                                   | Enable model reasoning when supported by the selected endpoint.                                 |
+| `nemotronAgent.maxToolRounds`    | `100`                                    | Maximum consecutive tool-calling rounds per request.                                            |
+| `nemotronAgent.persona`          | `helpful coding assistant`               | Persona that guides the assistant.                                                              |
+| `nemotronAgent.tone`             | `""`                                     | Preferred response tone, such as `concise` or `detailed`.                                       |
+| `nemotronAgent.expertise`        | `[]`                                     | Areas of expertise used for personalization.                                                    |
+| `nemotronAgent.responseLanguage` | `auto`                                   | Response language: `auto`, `English`, `Malayalam`, or `Hindi`.                                  |
+| `nemotronAgent.codeStyle`        | `follow project conventions`             | Coding preference: project conventions, focused changes, TypeScript-first, or JavaScript-first. |
+| `nemotronAgent.memoryEnabled`    | `true`                                   | Include memory guidance in the prompt; it does not inject a separate cross-chat fact store.     |
+| `nemotronAgent.autoSaveChats`    | `true`                                   | Save conversation history in VS Code workspace state.                                           |
+| `nemotronAgent.autoMode`         | `false`                                  | Skip per-operation approval prompts for supported tools.                                        |
+
+### Safety and permissions
+
+- **File edits:** Existing files are edited using exact text anchors. The extension validates anchors against a single source snapshot, rejects missing, ambiguous, overlapping, or stale edits, and displays a diff before applying changes. Approved edits are applied as one undoable VS Code workspace edit, saved, and verified.
+- **Workspace boundaries:** File tools use workspace-relative paths and reject paths that resolve outside the opened workspace. Editing, terminal execution, and Git write operations require a trusted workspace.
+- **Sensitive paths:** Workspace file/context tools exclude detected secret files. This is not a sandbox for shell commands: a command can access anything available to your operating-system account.
+- **Terminal commands:** The exact command is shown for approval by default. Normal shell syntax, including pipes, chaining, redirection, subshells, and multiline commands, is supported. Commands run in the workspace using your current OS user permissions; review them before allowing execution.
+- **Git operations:** Mutating actions require approval by default. Destructive operations such as hard reset and clean require explicit force flags.
+- **Auto mode:** When enabled, supported file, terminal, and Git operations skip per-operation approval prompts. It does not bypass workspace trust or path validation. Enable it only if you are comfortable granting the assistant this level of access.
+- **Remembered command approval:** **Allow** remembers the exact command for the current workspace, **Allow once** authorizes only the current operation, and **Cancel** stops it.
+
+---
+
+## Development
+
+To build and test from source:
+
+```sh
 npm install
 npm run compile
-npx vsce package
+npm run lint
+npm test
 ```
 
-Install the generated VSIX through **Extensions → Install from VSIX...**.
+Use **F5** in VS Code to launch an Extension Development Host. Additional scripts include `npm run watch`, `npm run format`, `npm run format:check`, and `npm run package`.
 
-## Safety behaviour for file edits
+---
 
-The model cannot replace an existing file with a generated full-file string. For an existing file it must provide a list of exact, unique text anchors. The extension validates all anchors against one source snapshot before showing an inline diff and approval controls. It rejects:
+## Contributing
 
-- Anchors that do not exist or occur more than once.
-- Overlapping edit ranges.
-- Broad/whole-file replacements.
-- A file whose editor version or on-disk contents change while approval is pending.
-- A file that changes while the approval dialog is open.
-- Edits outside the trusted workspace or edits to detected secret files.
+Bug reports and contributions are welcome. Please open an issue to report a problem or discuss a proposed change, and include relevant reproduction steps where possible.
 
-After approval, individual changes are staged in the UI. The actual file update is committed as **one atomic, undoable VS Code edit**, rather than writing partial file contents chunk by chunk. This is intentional: streaming incomplete source text directly to disk can leave a broken file if the extension or editor closes mid-write. The extension then saves and verifies the final file.
+[Open an issue](https://github.com/RJRYT/vscode-coding-agent/issues) · [Browse the source](https://github.com/RJRYT/vscode-coding-agent)
 
-New files can still be created with `createContent`, but only when the target path does not already exist and after explicit approval.
+## License
 
-## Other tool safety
+Distributed under the MIT License. See [LICENSE](LICENSE).
 
-- Workspace reads and search are read-only.
-- Terminal commands require approval and run in the workspace root.
-- A limited set of file-writing, dependency-install, secret-dump, and destructive command patterns is blocked.
-- The extension does not expose direct delete-file tools or allow shell command chaining. Approved development commands run as a single command.
+## Changelog
 
-Review every approved patch and command. Commands can still have effects beyond the workspace depending on the shell and installed tools.
+Release highlights are listed below, with the newest changes first. For the complete history, see the [Git commit log](https://github.com/RJRYT/vscode-coding-agent/commits/main).
 
-## Settings
+### Unreleased
 
-| Setting                       | Default                                  | Purpose                                                                        |
-| ----------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------ |
-| `nemotronAgent.model`         | `nvidia/nemotron-3.5-super-vl-120b-a12b` | NVIDIA model ID                                                                |
-| `nemotronAgent.baseUrl`       | `https://integrate.api.nvidia.com/v1`    | OpenAI-compatible API base URL                                                 |
-| `nemotronAgent.maxTokens`     | `16384`                                  | Maximum output tokens per model turn; reasoning tokens count toward this limit |
-| `nemotronAgent.reasoning`     | `true`                                   | Enable Nemotron thinking                                                       |
-| `nemotronAgent.maxToolRounds` | `8`                                      | Maximum consecutive tool-call rounds per request                               |
+- Refactored tests and supporting code for clearer, more consistent coverage.
 
-## Current limitations
+### 0.2.28
 
-This is not full Codex parity. Patch application is exact-anchor based and the approval diff is a preview, not a fully interactive Git diff editor. Pending approval UI can be restored after a webview refresh while the extension host remains alive; a full extension-host restart cancels in-flight operations. The workspace search is bounded and may skip large files. It targets desktop VS Code; browser-based VS Code environments may not support the Node child-process command runner.
+- Improved source-anchor token normalization and recovery when only whitespace differs.
+- Improved diagnostics for stale edit anchors and reduced successful-edit completion feedback in Auto mode.
 
-## 0.2.1 stability update
+### 0.2.27
 
-- Removed the runtime dependency on jsDelivr/remote Markdown scripts. The webview now renders basic Markdown locally, so its startup and button handlers do not depend on external network availability.
-- Added a visible in-panel error banner and extension-host error notifications for webview/runtime failures.
-- Registered the webview message listener before setting its HTML to avoid losing the initial ready handshake.
+- Fixed the Auto mode composer toggle and synchronized its state with Settings.
+- Improved accessibility and feedback for the toggle.
 
-## Architecture and maintainability updates
+### 0.2.26
 
-- `resources/webview.html` contains the webview markup, styles, and client script. The extension injects a per-view CSP and script nonce at runtime.
-- `resources/system-prompt.md` contains the engineering system prompt. `AgentLoop` fills only explicit workspace/persona/preference/memory placeholders.
-- `ChatManager` owns chat metadata and persistence coordination; `ToolDispatcher` validates and routes tool calls; `ContextCollector` adapts context capture and formatting.
-- `toolValidation.ts` centralizes tool name, shape, required-field, and size validation without adding a schema dependency.
-- `ContextSourceRegistry` allows extensions or future built-in modules to register additional opt-in context sources. Register a source with `contextSources.register({ id, label, maxChars, collect })`; dispose the returned `vscode.Disposable` to unregister it. Registered sources automatically appear in the composer context menu and are collected only when selected.
-- `AgentLogger` writes structured JSON events to the **Nemotron Agent** Output Channel. Search skips and failed edits/commands include actionable metadata without logging file contents or secrets.
-- `ChatStore.flush()` can be awaited by tests or shutdown-sensitive flows to wait for queued workspace-state writes.
+- Synchronized Auto mode, Thinking, Memory, and Auto-save controls between the composer and Settings.
+- Updated only settings returned by partial configuration responses.
 
-No runtime dependency was added for validation or logging.
+### 0.2.25
 
-### Additional tests
+- Added the configurable Auto mode for operations that otherwise require approval.
+- Strengthened edit argument validation.
 
-New tests cover centralized tool validation and dispatch, chat metadata behavior, workspace-state persistence, model SSE parsing, and pluggable context sources. Run `npm test`, `npm run lint`, and `npm run compile` in an environment with the lockfile dependencies installed.
+### 0.2.24
 
-### 0.2.15 implementation notes
+- Added file and folder lifecycle tools and improved their validation.
+- Added build scripts to clean generated output and copy extension resources.
 
-This release extracts the webview and engineering prompt into runtime resources, introduces typed webview and tool argument boundaries, separates chat persistence/context collection/tool dispatch into focused modules, adds structured output-channel diagnostics, and expands unit coverage for storage, model streaming, validation, and dispatch. Failed new-file writes are compensated only when the file still matches the agent-created payload; failed editor saves attempt a guarded in-memory rollback.
+### 0.2.23
 
-## v0.2.17 reliability changes
+- Aligned the extension runtime entry point and improved tool argument compatibility and validation.
 
-- Removed the separate hard cap on individual tool calls. The configurable model tool-round setting remains available (default 100, maximum 200).
-- Terminal commands now support shell chaining, pipes, redirection, command substitution, multiline scripts, and normal project commands. Every command still requires explicit approval and a trusted VS Code workspace. Commands run with the current user's OS permissions and are not sandboxed.
-- Increased file read, edit, and resulting-file limits to 50 MB; patch fields support up to 50 million characters with an aggregate patch payload budget.
-- Exact full-file snapshot replacements are now allowed when `oldText` exactly matches the current file; the approval and stale-snapshot checks still apply.
-- Increased terminal command length to 20,000 characters, no automatic command timeout (the user can stop the active request), and output buffer to 10 MB.
+### 0.2.22
 
-## v0.2.18 large file-edit payload fix
+- Improved pagination argument handling and recovery of escaped edit anchors.
 
-- Removed `maxLength` from the `oldText`, `newText`, and `createContent` tool JSON schema fields. Provider-side tool-schema validation no longer enforces the obsolete 5-million-character cap.
-- Runtime validation now accepts up to 50 million characters per patch field and 50 million characters combined across one patch request.
-- File read, edit, and resulting-file byte limits are aligned at 50 MB.
-- `newText` validation now distinguishes a missing/non-string value from an oversized string and reports the actual received character count. Empty `newText` remains valid for deleting an exact matched anchor.
-- Added regression coverage for a replacement larger than 5 million characters.
+### 0.2.21
 
-## Workspace and Git tools (0.2.24)
+- Updated TypeScript configuration and expanded coverage for tool argument edge cases.
 
-Nemotron Agent includes dedicated workspace lifecycle tools for creating folders, deleting files, and recursively deleting folders. Destructive actions show an approval request before execution unless full Auto mode is enabled; deletion is workspace-scoped, refuses the workspace root, and uses the VS Code trash option when supported.
+### 0.2.20
 
-The Git manager supports status, unstaged/staged diffs, history, branch listing/creation/switching/deletion/renaming, staging/unstaging, commits, push/pull/fetch, merge/rebase/cherry-pick/revert, soft/mixed/hard reset, stash operations, tags, remote management, blame, worktrees, clean previews, and repository initialization. Read-only actions run directly; mutating actions require approval unless full Auto mode is enabled. Destructive `reset_hard` and `clean` require an explicit `force: true`; force push uses `--force-with-lease`. Git is invoked with argument arrays (not through a shell), remote URLs containing embedded credentials are rejected, and diff/stage operations exclude protected secret paths by default.
+- Improved edit reliability for open, unsaved files and normalized CRLF/LF differences.
+- Accepted common replacement-field aliases while rejecting missing replacement text.
 
-File-edit arguments are normalized to support common provider variations, including top-level single-edit `{ path, oldText, newText }`, `filePath`/`file_path`, and `description`/`reason` aliases. If a provider accidentally sends both create and edit payloads, the registry chooses based on the actual path: existing files use targeted edits; missing files use createContent. It never overwrites an existing file with createContent. Generic provider metadata such as `description`, `oldText`, `limit`, and `offset` is tolerated when attached to unrelated tools, while operation-specific unknown arguments remain rejected.
+### 0.2.18
 
-## Auto mode and permissions (v0.2.25)
+- Raised file and patch payload limits and expanded runtime validation.
 
-Auto mode can be toggled from the composer or Settings. When enabled, file/folder creation, editing, deletion, terminal commands, and Git mutations do not show approval prompts. Workspace trust, path boundaries, secret-file protections, command validation, and required force flags remain active. For those command operations, **Allow** remembers the exact command in the current workspace, **Allow once** authorizes only the current operation, and **Cancel** stops it. Remembered permissions are stored as hashes in VS Code extension global state.
+### 0.2.17
 
-You can revoke all remembered command permissions at any time from **Settings → Behavior → Clear permissions**.
+- Increased file read/edit, terminal command, and output limits.
+- Enabled normal shell composition, including command chaining, pipes, redirection, and multiline scripts.
 
-## v0.2.26 settings fixes
+### 0.2.16
 
-- Auto mode, Thinking, Memory, and Auto-save controls now synchronize immediately between the composer and Settings.
-- Partial configuration responses update only the setting they contain, preventing unrelated toggles from changing unexpectedly.
-- Memory changes are acknowledged with the persisted configuration state.
+- Improved patch handling and expanded tool validation tests.
 
-## 0.2.27
+### 0.2.15
 
-- Fixed the Auto mode composer toggle by removing unsupported native confirmation dialogs from the VS Code webview.
-- Centralized Auto mode changes so the composer button and Settings checkbox update immediately and stay synchronized with the persisted extension setting.
-- Added an explicit pressed state for accessibility and reliable visual synchronization after configuration acknowledgements.
+- Improved chat persistence, including saving tool calls and results with conversations.
+- Added a visible assistant loading state and inline approval diffs.
+- Added personalization controls for persona, tone, expertise, response language, and code style.
 
-## 0.2.28
+### 0.2.6
 
-- Safer formatting-only anchor recovery and better stale-anchor diagnostics.
-- Quiet successful edit completion feedback in Auto mode.
+- Added workspace context management and improved the system prompt.
+- Fixed webview startup behavior and added startup error reporting.
+
+### 0.1.10
+
+- Added persona and memory settings and persistent chat storage.
+
+### Earlier releases
+
+- **0.1.7** — Updated the extension icon for improved scaling.
+- **0.1.6** — Added the extension icon.
+- **0.1.0** — Initial project structure and extension setup.
