@@ -54,7 +54,7 @@ Download the latest `.vsix` from [GitHub Releases](https://github.com/RJRYT/vsco
 
 1. Open a project folder in VS Code. Trust it if you want to enable file edits, terminal commands, and Git mutations.
 2. Open **Nemotron Agent** from the Activity Bar.
-3. Run **Nemotron Agent: Set NVIDIA API Key** and enter your key. It is stored using VS Code Secret Storage.
+3. Follow the in-chat setup guide to create or sign in to your NVIDIA Build account, complete any email and mobile verification, and create an API key. Enter the key in the secure prompt; it is stored using VS Code Secret Storage.
 4. Start a new chat. Use the context controls to include editor or diagnostic information when it is relevant.
 
 The extension sends your prompts and any context or tool results needed for a request to the configured model endpoint. Avoid including information you do not want sent to that provider.

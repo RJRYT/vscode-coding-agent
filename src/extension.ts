@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { NemotronAgentView } from './view';
+import { API_KEY_SECRET } from './config';
 
 export function activate(context: vscode.ExtensionContext): void {
   const provider = new NemotronAgentView(context);
@@ -17,14 +18,14 @@ export function activate(context: vscode.ExtensionContext): void {
         ignoreFocusOut: true,
       });
       if (value?.trim()) {
-        await context.secrets.store('nemotronAgent.nvidiaApiKey', value.trim());
+        await context.secrets.store(API_KEY_SECRET, value.trim());
         void vscode.window.showInformationMessage('NVIDIA API key saved securely.');
       }
     })
   );
   context.subscriptions.push(
     vscode.commands.registerCommand('nemotronAgent.clearApiKey', async () => {
-      await context.secrets.delete('nemotronAgent.nvidiaApiKey');
+      await context.secrets.delete(API_KEY_SECRET);
       void vscode.window.showInformationMessage('NVIDIA API key removed.');
     })
   );

@@ -201,6 +201,13 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         this.agent?.stopRequest();
         break;
       }
+      case 'openApiKeyPage': {
+        const opened = await vscode.env.openExternal(
+          vscode.Uri.parse('https://build.nvidia.com/settings/api-keys')
+        );
+        if (!opened) throw new Error('Could not open the NVIDIA API keys page in your browser.');
+        break;
+      }
       case 'setKey': {
         await vscode.commands.executeCommand('nemotronAgent.setApiKey');
         const apiKey = await this.context.secrets.get(API_KEY_SECRET);
@@ -212,8 +219,19 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         break;
       }
       case 'clearKey': {
+        const confirmation = await vscode.window.showWarningMessage(
+          'Remove the saved NVIDIA API key?',
+          { modal: true },
+          'Remove API key'
+        );
+        if (confirmation !== 'Remove API key') break;
         await vscode.commands.executeCommand('nemotronAgent.clearApiKey');
-        this.post({ type: 'keyState', hasKey: false, text: 'NVIDIA API key removed.' });
+        const apiKey = await this.context.secrets.get(API_KEY_SECRET);
+        this.post({
+          type: 'keyState',
+          hasKey: !!apiKey,
+          text: apiKey ? 'NVIDIA API key is configured.' : 'NVIDIA API key removed.',
+        });
         break;
       }
       case 'loadChat': {
