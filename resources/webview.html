@@ -165,6 +165,99 @@
         color: var(--accentFg);
         border-color: transparent;
       }
+      button.toggleIcon {
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        flex-shrink: 0;
+      }
+      .send .sendSpin {
+        display: none;
+        width: 14px;
+        height: 14px;
+        border: 2px solid transparent;
+        border-top-color: var(--accentFg);
+        border-right-color: var(--accentFg);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      .send.busy .sendSpin {
+        display: block;
+      }
+      .send.busy svg {
+        display: none;
+      }
+      /* Tool card states */
+      .expandable.tool summary {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .toolIcon {
+        display: inline-flex;
+        flex-shrink: 0;
+        color: var(--muted);
+      }
+      .toolIcon.running {
+        color: var(--accent);
+      }
+      .toolSpin {
+        display: block;
+        width: 11px;
+        height: 11px;
+        border: 2px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      .doneState {
+        font-size: 10px;
+        padding: 1px 7px;
+        border-radius: 9px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        margin-left: 2px;
+      }
+      .doneState.success {
+        color: var(--vscode-testing-iconPassed, #3fb950);
+        border-color: color-mix(
+          in srgb,
+          var(--vscode-testing-iconPassed, #3fb950) 40%,
+          transparent
+        );
+      }
+      .doneState.failed,
+      .doneState.timeout {
+        color: var(--error);
+        border-color: color-mix(in srgb, var(--error) 40%, transparent);
+      }
+      .doneState.cancelled,
+      .doneState.rejected {
+        color: var(--warning);
+        border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+      }
+      .feed[aria-busy='true']::after {
+        content: '';
+        position: sticky;
+        bottom: 0;
+        display: block;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        background-size: 50% 100%;
+        animation: feedProgress 1.2s ease-in-out infinite;
+      }
+      @keyframes feedProgress {
+        0% {
+          background-position: -50% 0;
+        }
+        100% {
+          background-position: 150% 0;
+        }
+      }
       hr {
         border: none;
         border-top: 1px solid var(--border);
@@ -1313,6 +1406,16 @@
           transition: none !important;
           animation: none !important;
         }
+        .spinner,
+        .toolSpin,
+        .send .sendSpin,
+        .loadingDots i {
+          animation: none !important;
+        }
+        .feed[aria-busy='true']::after {
+          animation: none;
+          opacity: 0.4;
+        }
       }
     </style>
   </head>
@@ -1624,13 +1727,51 @@
               </p>
               <div class="suggestions">
                 <button data-prompt="Explore this codebase and explain its architecture.">
-                  Explore codebase</button
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="6.5" cy="6.5" r="4" />
+                    <path d="M9.5 9.5 14 14" /></svg
+                  >Explore codebase</button
                 ><button data-prompt="Find likely bugs and suggest fixes. Do not change files yet.">
-                  Find bugs</button
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="8" cy="8" r="6" />
+                    <path d="M8 5v4M8 11.2v.1" /></svg
+                  >Find bugs</button
                 ><button
                   data-prompt="Review this project and identify the most important improvements."
                 >
-                  Review project
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M2.5 8a5.5 5.5 0 1 1 1.6 3.9L2.5 13.5V8z" /></svg
+                  >Review project
                 </button>
               </div>
             </div>
@@ -1656,12 +1797,49 @@
               <div class="actions" id="composerActions">
                 <button
                   id="autoModeBtn"
-                  class="toggle"
+                  class="toggle toggleIcon"
                   title="Auto mode: skip all approval prompts"
+                  aria-label="Toggle auto mode"
+                  aria-pressed="false"
                 >
-                  Auto
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M8.8 1.5 3.5 9h3.4l-.7 5.5L11.5 7H8.1z" />
+                  </svg>
                 </button>
-                <button id="thinkBtn" class="toggle" title="Think on/off">Think</button>
+                <button
+                  id="thinkBtn"
+                  class="toggle toggleIcon"
+                  title="Thinking mode on/off"
+                  aria-label="Toggle thinking mode"
+                  aria-pressed="true"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M8 1.8a4.4 4.4 0 0 1 2.4 8.1c-.4.3-.6.7-.6 1.1v.5H6.2v-.5c0-.4-.2-.8-.6-1.1A4.4 4.4 0 0 1 8 1.8z"
+                    />
+                    <path d="M6.5 13.5h3M7 15h2" />
+                  </svg>
+                </button>
                 <button
                   id="stopBtn"
                   class="hidden danger"
@@ -1684,7 +1862,8 @@
                   title="Send message"
                   aria-label="Send message"
                 >
-                  <svg
+                  <span class="sendSpin" aria-hidden="true"></span
+                  ><svg
                     width="15"
                     height="15"
                     viewBox="0 0 16 16"
@@ -2165,7 +2344,10 @@
         const box = el('details', 'expandable tool');
         box.dataset.tool = name;
         box.dataset.callId = id || '';
-        const summary = el('summary', null, '⚙ ' + name);
+        const summary = el('summary');
+        const toolIcon = el('span', 'toolIcon running');
+        toolIcon.innerHTML = '<span class="toolSpin"></span>';
+        summary.append(toolIcon, el('span', 'toolName', name));
         let detail = '';
         if (name === 'propose_file_edit') {
           const count = Array.isArray(args?.edits)
@@ -2212,7 +2394,17 @@
                         : status === 'stale'
                           ? 'stale'
                           : 'failed';
-          box.querySelector('summary').append(el('span', 'done', ' · ' + label));
+          const icon = box.querySelector('.toolIcon');
+          if (icon) {
+            icon.classList.remove('running');
+            icon.innerHTML =
+              status === 'success'
+                ? '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5"/></svg>'
+                : status === 'cancelled' || status === 'rejected'
+                  ? '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>'
+                  : '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><circle cx="8" cy="12.2" r="1" fill="currentColor" stroke="none"/></svg>';
+          }
+          box.querySelector('summary').append(el('span', 'doneState ' + label, label));
         }
         approvalDock
           .querySelectorAll('.approval[data-resolved="true"]')
@@ -2357,7 +2549,11 @@
       function setBusy(v) {
         busy = v;
         sendBtn.disabled = v;
+        sendBtn.classList.toggle('busy', v);
+        sendBtn.setAttribute('aria-label', v ? 'Sending…' : 'Send message');
         stopBtn.classList.toggle('hidden', !v);
+        feed.setAttribute('aria-busy', String(v));
+        input.setAttribute('aria-busy', String(v));
         if (v) setStatus('Nemotron is working…', true);
         else if (statusEl.classList.contains('working')) setStatus('Ready', false);
       }
@@ -2704,6 +2900,7 @@
         if (Object.prototype.hasOwnProperty.call(c, 'reasoning')) {
           sReasoning.checked = !!c.reasoning;
           thinkBtn.classList.toggle('on', !!c.reasoning);
+          thinkBtn.setAttribute('aria-pressed', String(!!c.reasoning));
         }
         if (Object.prototype.hasOwnProperty.call(c, 'memoryEnabled'))
           sMemory.checked = !!c.memoryEnabled;

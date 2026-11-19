@@ -199,6 +199,14 @@ function normalizeEdit(item: ToolArguments, index: number, inherited?: string): 
     }
   }
   if (newText === undefined) newText = inherited;
+  // Providers commonly emit newText: null (or a nested object without a usable
+  // string) when the model truncates the payload. That must fail with a distinct,
+  // self-explanatory message instead of the generic "missing replacement text".
+  const nullReplacementKeys = NEW_KEYS.filter((key) => item[key] === null);
+  if (newText === undefined && nullReplacementKeys.length > 0)
+    throw new Error(
+      `Edit ${index + 1} sets ${nullReplacementKeys.join(', ')} to null. Replacement text must be a plain JSON string; use "" (empty string) for an intentional deletion. The extension will not guess replacement code.`
+    );
   if (oldText === undefined || oldText.length === 0)
     throw new Error(
       `Edit ${index + 1} is missing its original text anchor. Use oldText. Received keys: ${Object.keys(item).join(', ') || '(none)'}.`
