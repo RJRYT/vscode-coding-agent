@@ -34,7 +34,12 @@ vi.mock('vscode', async () => {
         readFile: async (uri: { fsPath: string }) => fs.readFileSync(uri.fsPath),
         stat: async (uri: { fsPath: string }) => {
           const s = fs.statSync(uri.fsPath);
-          return { type: s.isDirectory() ? 2 : 1, size: s.size, mtime: s.mtimeMs, ctime: s.ctimeMs };
+          return {
+            type: s.isDirectory() ? 2 : 1,
+            size: s.size,
+            mtime: s.mtimeMs,
+            ctime: s.ctimeMs,
+          };
         },
         delete: async () => {},
       },
@@ -53,9 +58,11 @@ vi.mock('vscode', async () => {
 // The mocked vscode module carries __state so the test can drive it.
 import * as vscodeModule from 'vscode';
 
-const state = (vscodeModule as unknown as {
-  __state: { root: string; documentText: string };
-}).__state;
+const state = (
+  vscodeModule as unknown as {
+    __state: { root: string; documentText: string };
+  }
+).__state;
 
 state.root = fs.mkdtempSync(path.join(os.tmpdir(), 'stale-edit-hint-'));
 const setDocumentText = (text: string) => {

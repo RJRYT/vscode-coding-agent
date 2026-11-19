@@ -260,6 +260,10 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         this.post({ type: 'chatsUpdated', chats: this.store ? this.store.listChats() : [] });
         break;
       }
+      case 'refreshChats': {
+        this.post({ type: 'chatsUpdated', chats: this.store ? this.store.listChats() : [] });
+        break;
+      }
       case 'setPerson': {
         const { persona, tone, expertise, responseLanguage, codeStyle } = message;
         const cfg = vscode.workspace.getConfiguration('nemotronAgent');

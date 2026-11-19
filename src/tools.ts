@@ -1456,7 +1456,9 @@ export class ToolRegistry {
       // hallucinated snippet. Append the freshness diagnosis so the model can
       // recover on the next attempt instead of retrying the same payload.
       if (error instanceof Error && !/ambiguous/i.test(error.message))
-        throw new Error(`${error.message}${this.fileEditFreshnessHint(relativePath, originalText)}`);
+        throw new Error(
+          `${error.message}${this.fileEditFreshnessHint(relativePath, originalText)}`
+        );
       throw error;
     }
     if (Buffer.byteLength(patchResult.text, 'utf8') > MAX_FILE_EDIT_BYTES) {

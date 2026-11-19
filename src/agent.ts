@@ -105,6 +105,7 @@ export class AgentLoop {
       this.currentChatId = chat.id;
       this.chats.save(chat);
       this.post({ type: 'chatCreated', id: this.currentChatId, title: chat.title });
+      void this.generateChatTitle(prompt, apiKey, config);
     }
 
     this.busy = true;
@@ -145,6 +146,47 @@ export class AgentLoop {
     const existing = this.chats.load(this.currentChatId);
     if (!existing) return;
     this.chats.save(this.chats.snapshot(existing, this.history));
+  }
+
+  /** Rename the chat with a short AI-generated title; falls back to the prompt prefix. */
+  private async generateChatTitle(
+    prompt: string,
+    apiKey: string,
+    config: NemotronAgentConfig
+  ): Promise<void> {
+    const chatId = this.currentChatId;
+    if (!chatId) return;
+    try {
+      const titleClient = new ModelClient({
+        baseUrl: config.baseUrl,
+        apiKey,
+        model: config.model,
+        maxTokens: 512,
+        reasoning: false,
+      });
+      const titleMessages: ChatMessage[] = [
+        {
+          role: 'system',
+          content:
+            'You generate short chat titles. Reply with the title only: 2 to 6 words, no quotes, no punctuation at the end, same language as the user message. It must describe what the user wants to do.',
+        },
+        { role: 'user', content: prompt.slice(0, 500) },
+      ];
+      const response = await titleClient.request(new AbortController().signal, titleMessages, []);
+      const cleaned = (response.content || '')
+        .replace(/\s+/g, ' ')
+        .replace(/^["'\s]+|["'\s.。！？!?]+$/g, '')
+        .slice(0, 60)
+        .trim();
+      if (!cleaned || !this.currentChatId || this.currentChatId !== chatId) return;
+      const chat = this.chats.load(chatId);
+      if (!chat) return;
+      chat.title = cleaned;
+      this.chats.save(this.chats.snapshot(chat, this.history));
+      this.post({ type: 'chatTitleUpdated', id: chatId, title: cleaned });
+    } catch {
+      // Keep the fallback title derived from the first prompt.
+    }
   }
 
   private async runAgentLoop(

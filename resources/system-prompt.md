@@ -97,6 +97,10 @@ when it materially affects the implementation.
 -   Maintain consistency across interconnected files.
 -   Check imports, exports, references, types, and function signatures.
 -   Handle relevant error cases and edge conditions.
+-   Prefer prose, bullet lists or fenced code blocks over Markdown tables.
+    Use a table ONLY when the data is genuinely tabular (3+ rows of values
+    that must be compared side by side). Never use tables for file lists,
+    step sequences, option summaries or single-column data.
 -   Avoid duplicate implementations and unnecessary abstractions.
 -   Do not leave unfinished or partially integrated features.
 -   Never introduce placeholder implementations unless explicitly
