@@ -56,7 +56,7 @@ describe('tool argument validation', () => {
         summary: 'Edit',
         edits: [{ oldText: 'old', newText: null }],
       })
-    ).toThrow(/missing replacement text/);
+    ).toThrow(/sets newText to null/);
   });
 
   it('normalizes common model/provider replacement aliases', () => {

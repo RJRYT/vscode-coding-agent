@@ -243,8 +243,8 @@ function optionalGlob(args: ToolArguments): string | undefined {
   if (explicit !== undefined) return explicit;
   const folder = firstString(args, ['path'], 500);
   if (folder === undefined) return undefined;
-  const normalized = folder.replace(/[\/]+$/, '');
-  return /[*?{}\[\]]/.test(normalized) ? normalized : `${normalized}/**/*`;
+  const normalized = folder.replace(/[/]+$/, '');
+  return /[*?{}[\]]/.test(normalized) ? normalized : `${normalized}/**/*`;
 }
 
 function validateRelativePath(value: unknown, label = 'path'): string {

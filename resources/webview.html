@@ -1,373 +1,2993 @@
-<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta http-equiv="Content-Security-Policy" content="{{CSP}}"><title>Nemotron Agent</title>
-<style>
-:root{color-scheme:light dark;--bg:var(--vscode-sideBar-background);--fg:var(--vscode-foreground);--muted:var(--vscode-descriptionForeground);--border:var(--vscode-panel-border);--card:var(--vscode-editorWidget-background);--accent:var(--vscode-button-background);--accentFg:var(--vscode-button-foreground);--input:var(--vscode-input-background);--sidebar:var(--vscode-sideBar-background);--hover:var(--vscode-list-hoverBackground);--active:var(--vscode-list-activeSelectionBackground);--activeFg:var(--vscode-list-activeSelectionForeground);--warning:var(--vscode-editorWarning-foreground);--error:var(--vscode-errorForeground)}*{box-sizing:border-box}body{margin:0;padding:0;background:var(--bg);color:var(--fg);font:13px var(--vscode-font-family);height:100vh;display:flex;flex-direction:column}button{font:inherit;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--fg);border-radius:6px;padding:6px 10px}button:hover{background:var(--hover)}button.primary{background:var(--accent);color:var(--accentFg);border-color:transparent}button:disabled{opacity:.5;cursor:not-allowed}button.icon{width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:8px}button.icon:hover{background:var(--hover)}button.toggle{background:var(--input);border-color:var(--border)}button.toggle.on{background:var(--accent);color:var(--accentFg);border-color:transparent}hr{ border:none;border-top:1px solid var(--border);margin:6px 0}
-
-/* Layout shell */
-.shell{display:flex;height:100vh;overflow:hidden}aside.sidebar{width:260px;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}main.panel{flex:1;display:flex;flex-direction:column;min-width:0}
-
-/* Header */
-.top{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--border);flex-shrink:0} .top .brand{font-weight:650;letter-spacing:.1px} .top .sub{font-size:11px;color:var(--muted)} .top .controls{display:flex;gap:5px} input.search{width:100%;background:var(--input);border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:6px 10px;font:inherit;margin-top:4px}
-
-/* Chat list */
-.list{flex:1;overflow:auto;padding:8px 4px;display:flex;flex-direction:column;gap:4px} .list h3{font-size:11px;color:var(--muted);margin:8px 10px 4px;text-transform:uppercase;letter-spacing:.6px} .chatItem{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;background:transparent} .chatItem:hover{background:var(--hover)} .chatItem.active{background:var(--active);color:var(--activeFg);border-color:var(--border)} .chatItem .meta{flex:1;overflow:hidden} .chatItem .title{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .chatItem .sub{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .chatItem .actions{opacity:0;display:flex;gap:4px} .chatItem:hover .actions,.chatItem.active .actions{opacity:1} .chatItem .actions button{padding:4px 6px;font-size:11px} .chatItem .renameInput{flex:1;min-width:0;background:var(--input);border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:4px 8px;font:inherit;font-size:12px} .chatItem .renameActions{display:flex;gap:4px} .chatItem .renameBtn{padding:4px 6px;font-size:11px} .empty{padding:16px;text-align:center;color:var(--muted);font-size:12px}
-
-/* Feed */
-.feed{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px;min-height:0} .welcome{margin:auto 0;text-align:center;color:var(--muted);padding:16px 6px} .welcome h2{font-size:16px;color:var(--fg);margin-bottom:6px} .welcome p{line-height:1.5} .suggestions{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px} .suggestions button{font-size:11px} .message{max-width:100%;line-height:1.55;overflow-wrap:anywhere} .message.user{background:var(--vscode-textBlockQuote-background);border:1px solid var(--border);padding:9px 10px;border-radius:9px;align-self:flex-end;max-width:94%;white-space:pre-wrap} .message.assistant{white-space:normal} .message.assistant .content{white-space:pre-wrap} .message .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px} .message pre{white-space:pre-wrap;overflow:auto;background:var(--vscode-textCodeBlock-background);padding:9px;border-radius:6px} .expandable .args{color:var(--muted);white-space:nowrap;font-size:10px;margin:4px 0;display:inline} .expandable summary{color:var(--muted);cursor:pointer;padding:5px 8px;font-size:11px;list-style:none;background:transparent;border-bottom:1px solid var(--border);user-select:none} .expandable summary:hover{background:var(--vscode-toolbar-hoverBackground)} .expandable[open] summary{border-bottom:1px solid transparent;border-radius:6px 6px 0 0;margin-bottom:-1px} .expandable[open] pre{white-space:pre-wrap;background:var(--vscode-textCodeBlock-background);padding:8px;margin:0;font-size:10px;overflow:auto;border-top:1px solid var(--border)} .expandable .result{color:var(--muted);white-space:pre-wrap;margin-top:4px;font-size:10px;max-height:240px;overflow:auto} .expandable .done{color:var(--vscode-descriptionForeground);margin-left:6px;font-size:10px} .approval{border:1px solid var(--warning);border-radius:8px;padding:10px;background:var(--card);display:flex;flex-direction:column;gap:8px} .approval h4{margin:0;font-size:13px} .approval .desc{color:var(--muted)} .preview{display:grid;grid-template-columns:1fr 1fr;gap:6px} .preview pre{margin:0;max-height:180px;font-size:10px;white-space:pre-wrap;overflow:auto;padding:7px;background:var(--vscode-textCodeBlock-background);border-radius:5px} .approval .actions{display:flex;gap:7px;justify-content:flex-end} .approval .danger{border-color:var(--error);color:var(--error)} .composer{border-top:1px solid var(--border);padding:9px;display:flex;flex-direction:column;gap:7px;flex-shrink:0} .textareaWrap{border:1px solid var(--vscode-input-border,var(--border));background:var(--input);border-radius:8px;padding:7px} .textareaWrap:focus-within{border-color:var(--vscode-focusBorder)} textarea{width:100%;resize:vertical;min-height:66px;max-height:180px;background:transparent;border:0;outline:0;color:var(--fg);font:inherit} .composerFoot{display:flex;align-items:center;justify-content:space-between} .status{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .actions{display:flex;gap:6px} .key{font-size:11px;color:var(--muted)} .send{min-width:62px} .contextRow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;position:relative} .contextMentionBtn{font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);background:var(--input);color:var(--fg);cursor:pointer} .contextMentionBtn:hover{background:var(--hover)} .contextPills{display:flex;flex-wrap:wrap;gap:6px;align-items:center} .contextPill{font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);background:var(--accent);color:var(--accentFg);display:inline-flex;align-items:center;gap:4px} .contextPill .remove{font-size:10px;cursor:pointer;padding:0 2px} .contextMenu{position:absolute;bottom:calc(100% + 4px);left:0;background:var(--card);border:1px solid var(--border);border-radius:6px;box-shadow:0 -4px 12px rgba(0,0,0,0.25);z-index:50;min-width:170px} .contextMenuItem{padding:6px 10px;font-size:11px;color:var(--fg);cursor:pointer} .contextMenuItem:hover{background:var(--hover)} .contextSummary{font-size:10px;color:var(--muted)} .hidden{display:none!important} a{color:var(--vscode-textLink-foreground)} .fatalError{margin:8px;padding:10px;border:1px solid var(--vscode-errorForeground);border-radius:7px;background:var(--vscode-inputValidation-errorBackground);color:var(--vscode-errorForeground);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
-
-/* Memory & reasoning chips */
-.chip{font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);background:var(--input);color:var(--muted)} .chip.on{background:var(--accent);color:var(--accentFg);border-color:transparent}
-
-/* Markdown */
-.message.assistant h1,.message.assistant h2,.message.assistant h3{font-size:13px;margin:8px 0 4px;color:var(--fg)} .message.assistant h1{font-size:15px} .message.assistant p{margin:6px 0;line-height:1.6} .message.assistant a{color:var(--vscode-textLink-foreground);text-decoration:underline} .message.assistant code{background:var(--vscode-textCodeBlock-background);padding:1px 4px;border-radius:3px;font-family:var(--vscode-editor-font-family);font-size:11px} .message.assistant pre{white-space:pre-wrap;overflow:auto;background:var(--vscode-textCodeBlock-background);padding:9px;border-radius:6px;margin:6px 0} .message.assistant pre code{padding:0;background:transparent} .message.assistant ul,.message.assistant ol{margin:6px 0 6px 20px;padding:0} .message.assistant blockquote{border-left:3px solid var(--border);margin:8px 0;padding:4px 12px;color:var(--muted)} .message.assistant table{border-collapse:collapse;margin:8px 0} .message.assistant th,.message.assistant td{border:1px solid var(--border);padding:4px 8px;text-align:left} .message.assistant hr{border:none;border-top:1px solid var(--border);margin:12px 0}
-
-/* Settings page */
-.settings{padding:16px;display:flex;flex-direction:column;gap:14px;overflow-y:auto} .settings h2{font-size:15px;margin:0 0 6px;color:var(--fg)} .settings .section{border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--card)} .settings .section h3{font-size:12px;color:var(--muted);margin:0 0 8px;text-transform:uppercase;letter-spacing:.6px} .settings .row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px} .settings .row:last-child{border-bottom:none} .settings .label{flex:1;min-width:140px} .settings .label b{color:var(--fg);display:block} .settings .desc{font-size:11px;color:var(--muted);margin-top:2px} .settings .text{min-width:140px;flex:1;background:var(--input);border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:6px 10px;font:inherit} .settings .toggle{width:44px;height:24px;background:var(--input);border:1px solid var(--border);border-radius:12px;cursor:pointer;position:relative;appearance:none;outline:none} .settings .toggle:checked{background:var(--accent);border-color:transparent} .settings .toggle:checked::after{left:22px;background:var(--accentFg)} .settings .toggle::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;background:var(--fg);border-radius:50%;transition:transform .2s} .badge{font-size:10px;padding:1px 6px;border-radius:8px;background:var(--input);color:var(--muted);border:1px solid var(--border)}
-
-/* Focused, single-screen navigation */
-.shell{display:flex;width:100%;height:100vh;overflow:hidden}main.panel{width:100%;height:100%;min-width:0;display:flex;flex-direction:column}.top{gap:10px}.top .brandBlock{flex:1;min-width:0}.top .controls{margin-left:auto}.chatListView{flex:1;overflow:auto;padding:22px 16px}.chatListInner{width:100%;max-width:720px;margin:0 auto}.chatListHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 0 18px}.chatListHead h2{font-size:18px;margin:0 0 4px}.chatListHead p{color:var(--muted);margin:0;font-size:12px}.chatListView input.search{margin:0 0 10px}.chatListView .list{padding:4px 0}.chatListView .chatItem{padding:12px;border:1px solid var(--border);margin-bottom:6px;background:var(--card)}.chatListView .chatItem .actions{opacity:1}.chatAppView{flex:1;min-height:0;display:flex;flex-direction:column}.settings{width:100%;max-width:760px;margin:0 auto;flex:1;min-height:0}.keySettings{display:flex;gap:12px;align-items:center;justify-content:space-between}.keyActions{display:flex;gap:6px;flex-shrink:0}.keyActions .danger{color:var(--error);border-color:var(--error)}.status.working:before{content:'';display:inline-block;width:10px;height:10px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;margin-right:7px;vertical-align:-2px;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.edit-progress{border:1px solid var(--border);border-radius:8px;background:var(--card);padding:9px 10px;display:flex;flex-direction:column;gap:7px}.edit-progress .line{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px}.edit-progress .spinner{width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}.edit-progress.done .spinner{animation:none;border:0;width:14px;height:14px}.progressTrack{height:3px;border-radius:4px;background:var(--border);overflow:hidden}.progressTrack span{display:block;height:100%;width:0;background:var(--accent);transition:width .18s ease}.edit-progress.done .progressTrack span{width:100%;background:var(--vscode-testing-iconPassed)}.preview{align-items:stretch}.previewCol{min-width:0}.previewLabel{font-size:10px;color:var(--muted);margin:0 0 4px}.preview pre{max-height:240px}.approval .desc.path{font-family:var(--vscode-editor-font-family);font-size:11px}.chatItem .actions button{opacity:.8}.chatItem .actions button:hover{opacity:1}.chatItem .sub{margin-top:3px}.feed{scroll-behavior:smooth}.composer{background:var(--bg)}.approvalDock{display:flex;flex-direction:column;gap:6px;max-height:35vh;overflow:auto}.approvalDock:empty{display:none}.approvalDock .approval{padding:8px;border-color:var(--warning)}.approvalDock .preview{display:none}.approval-inline{border-left:2px solid var(--warning);padding:7px 9px;margin:5px 0 10px;background:var(--card);border-radius:0 7px 7px 0}.diffView{font:11px var(--vscode-editor-font-family);white-space:pre;overflow:auto;max-height:260px;background:var(--vscode-textCodeBlock-background);border-radius:5px;padding:7px}.diffLine{display:block;white-space:pre}.diffLine.add{color:var(--vscode-gitDecoration-addedResourceForeground,var(--vscode-testing-iconPassed))}.diffLine.remove{color:var(--vscode-gitDecoration-deletedResourceForeground,var(--error))}.approval-inline .approval-state{font-size:10px;color:var(--muted);margin-top:5px}.loadingState{color:var(--muted);font-size:12px;padding:3px 0}.loadingDots{display:inline-flex;gap:4px;margin-left:7px}.loadingDots i{width:4px;height:4px;background:var(--muted);border-radius:50%;animation:pulse 1s infinite}.loadingDots i:nth-child(2){animation-delay:.15s}.loadingDots i:nth-child(3){animation-delay:.3s}@keyframes pulse{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
-@media(max-width:420px){.chatListView{padding:16px 10px}.chatListHead{align-items:flex-start;flex-direction:column}.chatListHead button{width:100%}.keySettings{align-items:flex-start;flex-direction:column}.keyActions{width:100%}.keyActions button{flex:1}.preview{grid-template-columns:1fr}.top{padding:0 8px}}
-
-/* GitHub-flavoured Markdown tables and block elements */
-.markdownTableWrap{max-width:100%;overflow-x:auto;margin:12px 0;border:1px solid var(--vscode-panel-border);border-radius:8px}
-.markdownTable{border-collapse:collapse;width:100%;font-size:13px;min-width:360px}
-.markdownTable th,.markdownTable td{padding:8px 11px;border-bottom:1px solid var(--vscode-panel-border);border-right:1px solid var(--vscode-panel-border);text-align:left;vertical-align:top}
-.markdownTable th{background:var(--vscode-editor-inactiveSelectionBackground);font-weight:650}
-.markdownTable tr:last-child td{border-bottom:0}
-.markdownTable th:last-child,.markdownTable td:last-child{border-right:0}
-.content hr{border:0;border-top:1px solid var(--vscode-panel-border);margin:14px 0}
-.content img{max-width:100%;height:auto;border-radius:6px}
-.content input[type=checkbox]{vertical-align:middle;margin-right:6px}
-.content blockquote{border-left:3px solid var(--vscode-textBlockQuote-border);margin:8px 0;padding:4px 12px;color:var(--vscode-descriptionForeground);background:var(--vscode-textBlockQuote-background)}
-.content pre{max-width:100%;overflow:auto}
-
-</style><style>
-.onboarding{flex:1;overflow:auto;padding:24px 16px;display:flex;align-items:center;justify-content:center}
-.onboardingCard{width:100%;max-width:560px;border:1px solid var(--border);border-radius:12px;padding:24px;background:var(--card)}
-.onboardingCard h1{font-size:20px;margin:0 0 8px;color:var(--fg)}
-.onboardingCard>p{line-height:1.55;color:var(--muted);margin:0 0 20px}
-.onboardingSteps{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:14px}
-.onboardingSteps li{display:flex;gap:12px;line-height:1.5}
-.onboardingStepNumber{width:24px;height:24px;flex-shrink:0;border:1px solid var(--border);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:var(--fg)}
-.onboardingSteps b{color:var(--fg)}
-.onboardingActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
-.onboardingPrivacy{font-size:11px;color:var(--muted);margin:14px 0 0}
-@media(max-width:420px){.onboarding{padding:16px 10px}.onboardingCard{padding:18px}}
-</style></head><body>
-<div class="shell">
-<main class="panel">
-  <div id="fatalError" class="fatalError hidden" role="alert"></div>
-  <div class="top">
-    <button id="backToList" class="icon hidden" title="Back to chats">←</button>
-    <div class="brandBlock"><div class="brand">Nemotron Agent</div><div class="sub">Workspace coding assistant</div></div>
-    <div class="controls"><button id="settingsBtn" class="icon" title="Settings">⚙</button><button id="newBtn" class="icon primary" title="New chat">＋</button></div>
-  </div>
-
-  <section id="onboardingView" class="onboarding hidden" aria-labelledby="onboardingTitle">
-    <div class="onboardingCard">
-      <h1 id="onboardingTitle">Let’s get your agent ready</h1>
-      <p>Connect an NVIDIA API key to start chatting. It only takes a moment:</p>
-      <ol class="onboardingSteps">
-        <li><span class="onboardingStepNumber">1</span><span>Sign in to NVIDIA Build or create an account. Complete the email and mobile number verification if prompted.</span></li>
-        <li><span class="onboardingStepNumber">2</span><span>On the API keys page, create a new key and copy it. Keep the key private.</span></li>
-        <li><span class="onboardingStepNumber">3</span><span>Return here, paste your key into the secure prompt, and you’re ready to chat.</span></li>
-      </ol>
-      <div class="onboardingActions">
-        <button id="openApiKeyPageBtn" class="primary">Open NVIDIA API keys</button>
-        <button id="onboardingSetKeyBtn">I have a key — enter it</button>
-      </div>
-      <p class="onboardingPrivacy">Your key is stored in VS Code Secret Storage and is never shown in the chat.</p>
-    </div>
-  </section>
-
-  <section id="chatListView" class="chatListView">
-    <div class="chatListInner">
-      <div class="chatListHead"><div><h2>Your chats</h2><p>Continue a previous task or start something new.</p></div><button id="listNewBtn" class="primary">＋ New chat</button></div>
-      <input id="chatSearch" class="search" placeholder="Search chats…" autocomplete="off">
-      <div class="list"><div id="chatList"><div class="empty">No saved chats yet.</div></div></div>
-    </div>
-  </section>
-
-  <section id="chatAppView" class="chatAppView hidden">
-    <div id="settingsView" class="settings hidden">
-      <h2>Settings</h2>
-      <div class="section"><h3>API key</h3>
-        <div class="keySettings"><div><b id="keyStatus">NVIDIA API key is not configured.</b><span class="desc">Stored securely in VS Code Secret Storage.</span></div><div class="keyActions"><button id="keyBtn" class="primary">Set / Update key</button><button id="clearKeyBtn" class="danger">Remove</button></div></div>
-      </div>
-      <div class="section"><h3>Model</h3>
-        <div class="row"><div class="label"><b>Model ID</b><span class="desc">NVIDIA NIM model to use.</span></div><input id="settingModel" class="text"></div>
-        <div class="row"><div class="label"><b>Base URL</b><span class="desc">OpenAI-compatible API endpoint.</span></div><input id="settingBaseUrl" class="text"></div>
-        <div class="row"><div class="label"><b>Max output tokens</b><span class="desc">Tokens per model turn (1024–65536).</span></div><input id="settingMaxTokens" class="text" style="width:120px"></div>
-        <div class="row"><div class="label"><b>Max tool rounds</b><span class="desc">Max consecutive tool-calling rounds per request.</span></div><input id="settingMaxToolRounds" class="text" style="width:120px"></div>
-      </div>
-      <div class="section"><h3>Behavior</h3>
-        <div class="row"><div class="label"><b>Auto mode</b><span class="desc">Full permission: skip approval prompts for file operations, terminal commands, and Git mutations.</span></div><input id="settingAutoMode" type="checkbox" class="toggle"></div>
-        <div class="row"><div class="label"><b>Reasoning / Thinking</b><span class="desc">Enable Nemotron thinking mode.</span></div><input id="settingReasoning" type="checkbox" class="toggle"></div>
-        <div class="row"><div class="label"><b>Memory</b><span class="desc">Remember facts across chats in this workspace.</span></div><input id="settingMemory" type="checkbox" class="toggle"></div>
-        <div class="row"><div class="label"><b>Remembered command permissions</b><span class="desc">Allow commands you previously chose to remember. Clear all saved permissions.</span></div><button id="clearAllowedCommands">Clear permissions</button></div>
-        <div class="row"><div class="label"><b>Auto-save chats</b><span class="desc">Save conversation history to this workspace.</span></div><input id="settingAutoSave" type="checkbox" class="toggle"></div>
-      </div>
-      <div class="section"><h3>Personalization</h3>
-        <div class="row"><div class="label"><b>Persona</b><span class="desc">How Nemotron should behave (e.g. helpful coding assistant).</span></div><select id="settingPersona" class="text"><option value="helpful coding assistant">Helpful coding assistant</option><option value="senior software engineer">Senior software engineer</option><option value="pragmatic pair programmer">Pragmatic pair programmer</option><option value="careful code reviewer">Careful code reviewer</option><option value="patient programming mentor">Patient programming mentor</option></select></div>
-        <div class="row"><div class="label"><b>Tone</b><span class="desc">Preferred tone (e.g. concise, detailed).</span></div><select id="settingTone" class="text"><option value="">Balanced</option><option value="concise and direct">Concise</option><option value="detailed and explanatory">Detailed</option><option value="friendly and conversational">Friendly</option><option value="formal and professional">Professional</option></select></div>
-        <div class="row"><div class="label"><b>Expertise</b><span class="desc">Primary technical focus for recommendations.</span></div><select id="settingExpertise" class="text"><option value="">General development</option><option value="MERN Stack">MERN Stack</option><option value="React and frontend">React / Frontend</option><option value="Node.js and backend">Node.js / Backend</option><option value="TypeScript">TypeScript</option><option value="DevOps and deployment">DevOps / Deployment</option><option value="Testing and debugging">Testing / Debugging</option><option value="Application security">Application Security</option></select></div>
-        <div class="row"><div class="label"><b>Response language</b><span class="desc">Language used for explanations and conversation.</span></div><select id="settingLanguage" class="text"><option value="auto">Automatic</option><option value="English">English</option><option value="Malayalam">Malayalam</option><option value="Hindi">Hindi</option></select></div>
-        <div class="row"><div class="label"><b>Code style</b><span class="desc">Preferred implementation style.</span></div><select id="settingCodeStyle" class="text"><option value="follow project conventions">Follow project conventions</option><option value="minimal focused changes">Minimal focused changes</option><option value="TypeScript-first">TypeScript-first</option><option value="JavaScript-first">JavaScript-first</option></select></div>
-      </div>
-    </div>
-
-    <div class="feed" id="feed"><div class="welcome" id="welcome"><h2>What are we building?</h2><p>Ask me to understand your codebase, fix bugs, implement features, or run checks. I’ll ask before editing files or running commands.</p><div class="suggestions"><button data-prompt="Explore this codebase and explain its architecture.">Explore codebase</button><button data-prompt="Find likely bugs and suggest fixes. Do not change files yet.">Find bugs</button><button data-prompt="Review this project and identify the most important improvements.">Review project</button></div></div></div>
-    <div class="composer">
-      <div id="approvalDock" class="approvalDock" aria-live="polite"></div>
-      <div class="textareaWrap"><textarea id="prompt" placeholder="Ask Nemotron to work on your code… (Enter to send, Shift+Enter for newline)"></textarea></div>
-      <div class="contextRow" id="contextRow">
-        <div class="contextMenu hidden" id="contextMenu">
-          <div class="contextMenuItem" data-kind="activeEditor">@ActiveFile</div>
-          <div class="contextMenuItem" data-kind="selectedCode">@SelectedCode</div>
-          <div class="contextMenuItem" data-kind="problems">@Problems</div>
-        </div>
-        <div class="contextPills" id="contextPills"></div>
-      </div>
-      <div class="composerFoot">
-        <div class="status" id="status">Connect your NVIDIA API key to begin</div>
-        <div class="actions" id="composerActions">
-          <button id="autoModeBtn" class="toggle" title="Auto mode: skip all approval prompts">Auto</button>
-          <button id="thinkBtn" class="toggle" title="Think on/off">Think</button>
-          <button id="stopBtn" class="hidden">Stop</button>
-          <button id="sendBtn" class="primary send">Send ↑</button>
-        </div>
-      </div>
-    </div>
-  </section>
-</main>
-</div>
-<script nonce="{{NONCE}}">
-// Keep this bootstrap separate from the main app script: it can report a syntax
-// error in that script before the app's own error handlers have had a chance to run.
-window.addEventListener('error',event=>{
-  const banner=document.getElementById('fatalError');
-  if(banner){banner.textContent='Nemotron Agent could not start: '+(event.message||'Webview script error');banner.classList.remove('hidden');}
-});
-window.addEventListener('unhandledrejection',event=>{
-  const banner=document.getElementById('fatalError');
-  if(banner){const reason=event.reason?.message||event.reason||'Asynchronous UI error';banner.textContent='Nemotron Agent UI error: '+String(reason);banner.classList.remove('hidden');}
-});
-</script>
-<script nonce="{{NONCE}}">
-const vscode=acquireVsCodeApi();
-const savedWebviewState=vscode.getState()||{};
-const fatalError=document.getElementById('fatalError');
-function reportClientError(message){
-  const text=String(message||'Unknown webview error');
-  if(fatalError){fatalError.textContent='Nemotron Agent UI error: '+text;fatalError.classList.remove('hidden');}
-  const status=document.getElementById('status');
-  if(status){status.textContent='UI error — see details above';status.classList.remove('working');}
-  try{vscode.postMessage({type:'clientError',text});}catch{}
-}
-window.addEventListener('error',event=>reportClientError(event.message||'A script failed to load'));
-window.addEventListener('unhandledrejection',event=>reportClientError(event.reason?.message||event.reason||'An asynchronous operation failed'));
-const feed=document.getElementById('feed');
-const input=document.getElementById('prompt');
-const sendBtn=document.getElementById('sendBtn');
-const stopBtn=document.getElementById('stopBtn');
-const statusEl=document.getElementById('status');
-const chatListEl=document.getElementById('chatList');
-const chatListView=document.getElementById('chatListView');
-const chatAppView=document.getElementById('chatAppView');
-const onboardingView=document.getElementById('onboardingView');
-const settingsView=document.getElementById('settingsView');
-const backToList=document.getElementById('backToList');
-const keyStatus=document.getElementById('keyStatus');
-let currentAssistant=null;
-let currentRaw='';
-let busy=false;
-let currentChatId=savedWebviewState.chatId||null;
-let chats=[];
-let currentScreen='list';
-let hasApiKey=false;
-const approvals=new Map();
-const editProgressCards=new Map();
-const toolCards=new Map();
-const approvalDock=document.getElementById('approvalDock');
-let config={reasoning:true,persona:'',memoryEnabled:false,autoSaveChats:true,autoMode:false};
-function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}
-function scroll(){feed.scrollTop=feed.scrollHeight}
-function setStatus(text,working){statusEl.textContent=text||'';statusEl.classList.toggle('working',!!working)}
-function showView(name){if(!hasApiKey&&name!=='settings'&&name!=='onboarding')name='onboarding';currentScreen=name;onboardingView.classList.toggle('hidden',name!=='onboarding');chatListView.classList.toggle('hidden',name!=='list');chatAppView.classList.toggle('hidden',name==='list'||name==='onboarding');settingsView.classList.toggle('hidden',name!=='settings');feed.classList.toggle('hidden',name==='settings');document.querySelector('.composer').classList.toggle('hidden',name==='settings');backToList.classList.toggle('hidden',name==='list'||name==='onboarding');if(name==='chat'){setTimeout(()=>input.focus(),30)}}
-function addUser(text){document.getElementById('welcome')?.remove();feed.append(el('div','message user',text));scroll()}
-function startAssistant(){document.getElementById('welcome')?.remove();const wrap=el('div','message assistant');wrap.append(el('div','label','Nemotron'));const content=el('div','content');const loading=el('div','loadingState','Preparing response');const dots=el('span','loadingDots');dots.innerHTML='<i></i><i></i><i></i>';loading.append(dots);content.append(loading);wrap.append(content);feed.append(wrap);currentAssistant=content;currentRaw='';scroll()}
-function resumeAssistant(){if(currentAssistant&&!currentRaw.trim())currentAssistant.closest('.message')?.remove();startAssistant()}
-function escapeHtml(value){return String(value).replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))}
-function renderInlineMarkdown(value){
-  let text=escapeHtml(value);
-  const code=[];
-  text=text.replace(/`([^`]+)`/g,(_,part)=>{const token='\uE000'+code.length+'\uE001';code.push('<code>'+part+'</code>');return token});
-  const safeUrl=(url)=>/^(https?:\/\/|mailto:)/i.test(url)?url:'#';
-  text=text.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)(?:\s+"([^"]*)")?\)/g,(_,alt,url,title)=>'<img src="'+safeUrl(url)+'" alt="'+alt+'" loading="lazy"'+(title?' title="'+title+'"':'')+'>');
-  text=text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)(?:\s+"([^"]*)")?\)/g,(_,label,url,title)=>'<a href="'+safeUrl(url)+'" target="_blank" rel="noopener noreferrer"'+(title?' title="'+title+'"':'')+'>'+label+'</a>');
-  text=text.replace(/&lt;(https?:\/\/[^&\s]+)&gt;/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
-  text=text.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-    .replace(/__(.+?)__/g,'<strong>$1</strong>')
-    .replace(/~~(.+?)~~/g,'<del>$1</del>')
-    .replace(/(^|[^\w])\*([^*\n]+)\*/g,'$1<em>$2</em>')
-    .replace(/(^|[^\w])_([^_\n]+)_/g,'$1<em>$2</em>');
-  return text.replace(/\uE000(\d+)\uE001/g,(_,index)=>code[Number(index)]||'');
-}
-function splitMarkdownTableRow(line){
-  let value=line.trim();
-  if(value.startsWith('|'))value=value.slice(1);
-  if(value.endsWith('|'))value=value.slice(0,-1);
-  const cells=[];let current='';let escaped=false;let inCode=false;
-  for(let i=0;i<value.length;i++){
-    const ch=value[i];
-    if(ch==='`'&&!escaped)inCode=!inCode;
-    if(ch==='|'&&!escaped&&!inCode){cells.push(current.trim());current='';continue}
-    current+=ch;
-    if(ch==='\\'&&!escaped)escaped=true;else escaped=false;
-  }
-  cells.push(current.trim());
-  return cells;
-}
-function renderMarkdown(source){
-  const lines=String(source||'').replace(/\r\n?/g,'\n').split('\n');
-  const html=[];let i=0;
-  const isTableDivider=(line)=>{const cells=splitMarkdownTableRow(line);return cells.length>0&&cells.every(cell=>/^:?-{3,}:?$/.test(cell))};
-  const renderListBlock=(start,baseIndent)=>{
-    let cursor=start;const first=lines[cursor].match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
-    if(!first)return {html:'',next:cursor};
-    const ordered=/^\d/.test(first[2]),tag=ordered?'ol':'ul',items=[];
-    while(cursor<lines.length){
-      const match=lines[cursor].match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
-      if(!match||match[1].length!==baseIndent||/^\d/.test(match[2])!==ordered)break;
-      const task=match[3].match(/^\[([ xX])\]\s+(.*)$/);
-      let itemHtml=task
-        ? '<input type="checkbox" disabled '+(task[1].toLowerCase()==='x'?'checked':'')+'> '+renderInlineMarkdown(task[2])
-        : renderInlineMarkdown(match[3]);
-      cursor++;
-      const nested=[];
-      while(cursor<lines.length){
-        const child=lines[cursor].match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
-        if(!child||child[1].length<=baseIndent)break;
-        const rendered=renderListBlock(cursor,child[1].length);
-        if(rendered.next===cursor)break;
-        nested.push(rendered.html);cursor=rendered.next;
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="{{CSP}}" />
+    <title>Nemotron Agent</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: var(--vscode-sideBar-background);
+        --fg: var(--vscode-foreground);
+        --muted: var(--vscode-descriptionForeground);
+        --border: var(--vscode-panel-border);
+        --card: var(--vscode-editorWidget-background);
+        --accent: var(--vscode-button-background);
+        --accentFg: var(--vscode-button-foreground);
+        --input: var(--vscode-input-background);
+        --sidebar: var(--vscode-sideBar-background);
+        --hover: var(--vscode-list-hoverBackground);
+        --active: var(--vscode-list-activeSelectionBackground);
+        --activeFg: var(--vscode-list-activeSelectionForeground);
+        --warning: var(--vscode-editorWarning-foreground);
+        --error: var(--vscode-errorForeground);
+        --shadow1: 0 1px 3px rgba(0, 0, 0, 0.18);
+        --shadow2: 0 6px 24px rgba(0, 0, 0, 0.25);
       }
-      items.push('<li>'+itemHtml+nested.join('')+'</li>');
-    }
-    return {html:'<'+tag+'>'+items.join('')+'</'+tag+'>',next:cursor};
-  };
-  const isBlockStart=(line,index)=>/^\s*```/.test(line)||/^\s{0,3}#{1,6}\s/.test(line)||/^\s*>/.test(line)||/^\s*(?:[-*_]\s*){3,}$/.test(line)||/^\s*([-*+]|\d+[.)])\s+/.test(line)||(index+1<lines.length&&line.includes('|')&&isTableDivider(lines[index+1]));
-  while(i<lines.length){
-    const line=lines[i];
-    if(!line.trim()){i++;continue}
-    const fence=line.match(/^\s*(```+|~~~+)\s*([^\s`]*)?.*$/);
-    if(fence){
-      const marker=fence[1][0],length=fence[1].length,language=(fence[2]||'').replace(/[^a-zA-Z0-9_+-]/g,'');
-      const code=[];i++;
-      while(i<lines.length&&!new RegExp('^\\s*'+(marker==='`'?'`':'~')+'{'+length+',}\\s*$').test(lines[i])){code.push(lines[i]);i++}
-      if(i<lines.length)i++;
-      html.push('<pre><code'+(language?' class="language-'+language+'"':'')+'>'+escapeHtml(code.join('\n'))+'</code></pre>');continue;
-    }
-    if(i+1<lines.length&&line.includes('|')&&isTableDivider(lines[i+1])){
-      const headers=splitMarkdownTableRow(line),alignments=splitMarkdownTableRow(lines[i+1]).map(cell=>cell.startsWith(':')&&cell.endsWith(':')?'center':cell.endsWith(':')?'right':cell.startsWith(':')?'left':'');
-      i+=2;const rows=[];
-      while(i<lines.length&&lines[i].trim()&&lines[i].includes('|')){rows.push(splitMarkdownTableRow(lines[i]));i++}
-      const head='<thead><tr>'+headers.map((cell,index)=>'<th'+(alignments[index]?' style="text-align:'+alignments[index]+'"':'')+'>'+renderInlineMarkdown(cell)+'</th>').join('')+'</tr></thead>';
-      const body='<tbody>'+rows.map(row=>'<tr>'+headers.map((_,index)=>'<td'+(alignments[index]?' style="text-align:'+alignments[index]+'"':'')+'>'+(row[index]===undefined?'':renderInlineMarkdown(row[index]))+'</td>').join('')+'</tr>').join('')+'</tbody>';
-      html.push('<div class="markdownTableWrap"><table class="markdownTable">'+head+body+'</table></div>');continue;
-    }
-    const heading=line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
-    if(heading){const level=heading[1].length;html.push('<h'+level+'>'+renderInlineMarkdown(heading[2])+'</h'+level+'>');i++;continue}
-    if(/^\s*(?:[-*_]\s*){3,}$/.test(line)){html.push('<hr>');i++;continue}
-    if(/^\s*>/.test(line)){
-      const quote=[];while(i<lines.length&&/^\s*>/.test(lines[i])){quote.push(lines[i].replace(/^\s*>\s?/,''));i++}
-      html.push('<blockquote>'+renderMarkdown(quote.join('\n'))+'</blockquote>');continue;
-    }
-    const listMatch=line.match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
-    if(listMatch){
-      const rendered=renderListBlock(i,listMatch[1].length);
-      html.push(rendered.html);i=rendered.next;continue;
-    }
-    if(i+1<lines.length&&/^\s*(?:=+|-+)\s*$/.test(lines[i+1])){
-      const level=lines[i+1].trim().startsWith('=')?1:2;
-      html.push('<h'+level+'>'+renderInlineMarkdown(line.trim())+'</h'+level+'>');i+=2;continue;
-    }
-    const paragraph=[line];i++;
-    while(i<lines.length&&lines[i].trim()&&!isBlockStart(lines[i],i)){paragraph.push(lines[i]);i++}
-    html.push('<p>'+paragraph.map(renderInlineMarkdown).join('<br>')+'</p>');
-  }
-  return html.join('');
-}
-function appendText(target,text){if(!target)return;currentRaw+=text;target.innerHTML=renderMarkdown(currentRaw);scroll()}
-function addReasoning(text){if(!currentAssistant)return;let box=currentAssistant.querySelector('.expandable.reasoning');if(!box){box=el('details','expandable reasoning');box.append(el('summary',null,'Reasoning / Thinking'),el('pre',null,''));currentAssistant.prepend(box);}box.querySelector('pre').textContent+=text;scroll()}
-function toolStart(name,args,id){if(currentAssistant&&!currentRaw.trim()&&!currentAssistant.querySelector('.expandable.reasoning')){currentAssistant.closest('.message')?.remove();currentAssistant=null;currentRaw=''}const box=el('details','expandable tool');box.dataset.tool=name;box.dataset.callId=id||'';const summary=el('summary',null,'⚙ '+name);let detail='';if(name==='propose_file_edit'){const count=Array.isArray(args?.edits)?args.edits.length:(typeof args?.createContent==='string'?1:0);detail=String(args?.path||'')+' · '+count+' focused change'+(count===1?'':'s')}else if(name==='run_terminal_command'){detail=String(args?.command||'').slice(0,220)}else{detail=JSON.stringify(args||{}).slice(0,220)}summary.append(el('span','args',' '+detail));box.append(summary,el('pre','result','Running…'));feed.append(box);if(id)toolCards.set(id,box);scroll()}
-function toolDone(name,result,status,id){const box=(id&&toolCards.get(id))||[...feed.querySelectorAll('.expandable.tool')].reverse().find(b=>b.dataset.tool===name&&!b.querySelector('.result.done'));if(box){const r=box.querySelector('.result');r.textContent=result;r.classList.add('done');const label=status==='success'?'success':status==='rejected'?'rejected':status==='cancelled'?'cancelled':status==='timeout'?'timed out':status==='invalid'?'invalid':status==='unsupported'?'unsupported':status==='stale'?'stale':'failed';box.querySelector('summary').append(el('span','done',' · '+label))}approvalDock.querySelectorAll('.approval[data-resolved="true"]').forEach(card=>card.remove());feed.querySelectorAll('.approval-inline .approval-state').forEach(state=>{if(state.textContent.includes('applying…'))state.textContent=status==='success'?'Operation completed successfully':status==='rejected'?'Operation rejected':status==='cancelled'?'Operation cancelled':'Operation failed · see tool result'});scroll()}
-function renderDiff(diff){const wrap=el('div','diffView');String(diff||'').split('\n').forEach(line=>{const row=el('span','diffLine '+(line.startsWith('+ ')?'add':line.startsWith('- ')?'remove':''),line);wrap.append(row)});return wrap}
-function approvalCard(m){if(approvals.has(m.id))return;const inline=el('div','approval-inline');inline.dataset.approvalInline=m.id;inline.append(el('b',null,m.title));inline.append(el('div','desc',m.summary||''));if(m.path)inline.append(el('div','desc path',m.path));if(m.kind==='file')inline.append(renderDiff(m.diff||''));else inline.append(el('pre',null,m.command||''));const state=el('div','approval-state',m.kind==='command'?'Choose whether to allow this exact command once or remember it.':'Approval required · choose Allow once or Cancel');inline.append(state);feed.append(inline);const card=el('div','approval');card.dataset.approval=m.id;card.append(el('div','desc',m.kind==='file'?'Allow this file operation?':'Allow this command?'));const actions=el('div','actions');const cancel=el('button','danger','Cancel');const once=el('button','primary','Allow once');const finish=(action)=>{[cancel,once,always].filter(Boolean).forEach(b=>b.disabled=true);once.textContent=action==='cancel'?'Cancelled':'Allowed · running…';state.textContent=action==='allow'?'Allowed · remembered for future identical commands':action==='allowOnce'?'Allowed once · running…':'Cancelled';setStatus(action==='cancel'?'Operation cancelled':'Permission granted · running…',action!=='cancel');vscode.postMessage({type:'approvalAction',id:m.id,action})};cancel.onclick=()=>finish('cancel');once.onclick=()=>finish('allowOnce');actions.append(cancel,once);let always=null;if(m.kind==='command'){always=el('button','primary','Allow');always.title='Remember this exact command for future requests in this workspace';always.onclick=()=>finish('allow');actions.append(always)}card.append(actions);approvalDock.append(card);approvals.set(m.id,{card,inline,state});scroll()}
-function updateEditProgress(m){let card=editProgressCards.get(m.id);if(!card){card=el('div','edit-progress');card.dataset.progress=m.id;const line=el('div','line');line.append(el('span','spinner',''),el('span','progressText','Preparing edit…'));const track=el('div','progressTrack');track.append(el('span'));card.append(line,track);const approval=approvals.get(m.id);if(approval?.inline?.parentNode===feed)approval.inline.after(card);else feed.append(card);editProgressCards.set(m.id,card)}const text=card.querySelector('.progressText');if(text)text.textContent=m.message||'Working…';const bar=card.querySelector('.progressTrack span');if(bar){const pct=m.stage==='completed'?100:m.total?Math.max(4,Math.round((m.current/m.total)*82)):4;bar.style.width=pct+'%'}if(m.stage==='completed'){card.classList.add('done');card.querySelector('.spinner').textContent='✓';if(config.autoMode){card.remove();editProgressCards.delete(m.id)}else{setStatus(m.message||'File saved and verified',false)}}else if(m.stage==='failed'){card.classList.add('done');card.querySelector('.spinner').textContent='!';setStatus('Edit needs attention',false)}else{setStatus(m.message||'Applying approved changes…',true)}const approval=approvals.get(m.id);if(approval){approval.state.textContent=m.message||m.stage;if(m.stage==='completed'||m.stage==='failed')approval.card.remove()}scroll()}
-function setBusy(v){busy=v;sendBtn.disabled=v;stopBtn.classList.toggle('hidden',!v);if(v)setStatus('Nemotron is working…',true);else if(statusEl.classList.contains('working'))setStatus('Ready',false)}
-let renamingChatId=null;function renderChats(){chatListEl.innerHTML='';const query=(document.getElementById('chatSearch').value||'').trim().toLowerCase();const shown=chats.filter(c=>!query||String(c.title||'').toLowerCase().includes(query)||String(c.preview||'').toLowerCase().includes(query));if(!shown.length){chatListEl.append(el('div','empty',query?'No chats match your search.':'No saved chats yet. Start a new chat to begin.'));return}shown.forEach(c=>{const item=el('div','chatItem');if(c.id===currentChatId)item.classList.add('active');const meta=el('div','meta');const titleDiv=el('div','title',c.title);titleDiv.id='chatTitle-'+c.id;meta.append(titleDiv);meta.append(el('div','sub',new Date(c.updatedAt).toLocaleString()+' · '+c.messageCount+' messages'));item.append(meta);const actions=el('div','actions');const renameBtn=el('button','renameBtn','✎');renameBtn.title='Rename chat';renameBtn.setAttribute('aria-label','Rename chat');renameBtn.onclick=(e)=>{e.stopPropagation();startRename(c)};actions.append(renameBtn);const del=el('button','','🗑');del.title='Delete chat';del.setAttribute('aria-label','Delete chat');del.onclick=(e)=>{e.stopPropagation();if(confirm('Delete this chat?'))vscode.postMessage({type:'deleteChat',id:c.id})};actions.append(del);item.append(actions);item.onclick=()=>{if(renamingChatId===c.id)return;currentChatId=c.id;vscode.postMessage({type:'loadChat',id:c.id})};chatListEl.append(item)})}function startRename(c){if(renamingChatId)doCancel();const titleDiv=document.getElementById('chatTitle-'+c.id);if(!titleDiv)return;renamingChatId=c.id;const input=el('input','renameInput');input.value=c.title;const save=el('button','renameBtn primary','Save');const cancel=el('button','renameBtn','Cancel');const doCancel=()=>{renamingChatId=null;renderChats()};save.onclick=(e)=>{e.stopPropagation();const newTitle=input.value.trim();if(newTitle&&newTitle!==c.title){vscode.postMessage({type:'renameChat',id:c.id,title:newTitle})}doCancel()};cancel.onclick=(e)=>{e.stopPropagation();doCancel()};const bar=el('div','renameActions');bar.append(input,save,cancel);titleDiv.textContent='';titleDiv.append(bar);input.focus()}
-function startNewChat(){currentChatId=null;vscode.setState({chatId:null});showView('chat');vscode.postMessage({type:'newChat'});renderChats()}
-let CONTEXT_KINDS=['activeEditor','selectedCode','problems'];
-let KIND_LABEL={'activeEditor':'@ActiveFile','selectedCode':'@SelectedCode','problems':'@Problems'};
-const selectedContexts=new Set();
-function contextOptions(){const options={};CONTEXT_KINDS.forEach(kind=>options[kind]=selectedContexts.has(kind));return options}
-function installContextSources(sources){const menu=document.getElementById('contextMenu');(sources||[]).forEach(source=>{if(!source||typeof source.id!=='string'||typeof source.label!=='string'||CONTEXT_KINDS.includes(source.id))return;CONTEXT_KINDS.push(source.id);KIND_LABEL[source.id]='@'+source.label.replace(/^@/,'');const item=el('div','contextMenuItem',KIND_LABEL[source.id]);item.dataset.kind=source.id;item.onclick=(e)=>{e.stopPropagation();if(selectedContexts.has(source.id))selectedContexts.delete(source.id);else selectedContexts.add(source.id);renderContextPills();updateContextUi();insertMentionTag(source.id);hideContextMenu()};menu.append(item)})}
-function renderContextPills(){const pills=document.getElementById('contextPills');pills.innerHTML='';CONTEXT_KINDS.forEach(kind=>{if(selectedContexts.has(kind)){const pill=el('div','contextPill');pill.append(el('span',null,KIND_LABEL[kind]));const rm=el('span','remove','×');rm.onclick=(e)=>{e.stopPropagation();selectedContexts.delete(kind);renderContextPills();updateContextUi()};pill.append(rm);pills.append(pill)}})}
-function insertMentionTag(kind){const tag='@'+kind.replace(/([A-Z])/g,' $1').trim().replace(/\s+/g,' ').replace(/\s/g,'')+' ';const s=input.selectionStart??0;const e=input.selectionEnd??0;const v=input.value;input.value=v.slice(0,s)+tag+v.slice(e);input.selectionStart=input.selectionEnd=s+tag.length;input.focus();updateContextUi()}
-function updateContextUi(){const opts=contextOptions();const enabled=CONTEXT_KINDS.filter(k=>selectedContexts.has(k)).map(k=>KIND_LABEL[k]);vscode.postMessage({type:'previewContext',contextOptions:opts})}
-const contextMenu=document.getElementById('contextMenu');function showContextMenu(){const sel=input.selectionStart??0;const rect=input.getBoundingClientRect();contextMenu.style.left=rect.left+sel*7+'px';contextMenu.classList.remove('hidden')}
-function hideContextMenu(){contextMenu.classList.add('hidden')}
-contextMenu.querySelectorAll('.contextMenuItem').forEach(item=>{item.onclick=(e)=>{e.stopPropagation();const kind=item.getAttribute('data-kind');if(kind){if(selectedContexts.has(kind))selectedContexts.delete(kind);else selectedContexts.add(kind)}renderContextPills();updateContextUi();insertMentionTag(kind);hideContextMenu()}});document.addEventListener('click',(e)=>{if(!contextMenu.contains(e.target)&&e.target!==input)hideContextMenu()});
-function send(){const text=input.value.trim();if(!text||busy)return;if(currentScreen!=='chat')showView('chat');addUser(text);input.value='';startAssistant();setBusy(true);vscode.postMessage({type:'send',text,contextOptions:contextOptions()})}
-sendBtn.onclick=send;stopBtn.onclick=()=>vscode.postMessage({type:'stop'});document.getElementById('newBtn').onclick=startNewChat;document.getElementById('listNewBtn').onclick=startNewChat;document.getElementById('settingsBtn').onclick=()=>showView('settings');backToList.onclick=()=>showView('list');document.getElementById('keyBtn').onclick=()=>vscode.postMessage({type:'setKey'});document.getElementById('clearKeyBtn').onclick=()=>vscode.postMessage({type:'clearKey'});document.getElementById('chatSearch').addEventListener('input',renderChats);input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}if(e.key==='@'||(e.shiftKey&&e.key==='2')){e.preventDefault();showContextMenu()}});input.addEventListener('input',()=>{const val=input.value;if(!val.endsWith('@')&&!val.includes(' @'))hideContextMenu()});document.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>{input.value=b.dataset.prompt;input.focus()});
-document.getElementById('openApiKeyPageBtn').onclick=()=>vscode.postMessage({type:'openApiKeyPage'});document.getElementById('onboardingSetKeyBtn').onclick=()=>vscode.postMessage({type:'setKey'});
-function setToggleState(key,value){applyConfig({[key]:!!value})}
-const autoModeBtn=document.getElementById('autoModeBtn');
-const settingAutoMode=document.getElementById('settingAutoMode');
-function setAutoMode(enabled){
-  const on=!!enabled;
-  // Update the webview immediately; the extension host will confirm the
-  // persisted value with configUpdated. Do not use window.confirm here:
-  // native confirmation dialogs can be unavailable/blocked in VS Code webviews.
-  config={...config,autoMode:on};
-  if(autoModeBtn){autoModeBtn.classList.toggle('on',on);autoModeBtn.setAttribute('aria-pressed',String(on))}
-  if(settingAutoMode)settingAutoMode.checked=on;
-  vscode.postMessage({type:'toggleAutoMode',enabled:on});
-}
-autoModeBtn.type='button';
-autoModeBtn.setAttribute('aria-pressed',String(!!config.autoMode));
-autoModeBtn.addEventListener('click',()=>setAutoMode(!config.autoMode));
-settingAutoMode.addEventListener('change',e=>setAutoMode(!!e.currentTarget.checked));
-const thinkBtn=document.getElementById('thinkBtn');
-thinkBtn.type='button';
-thinkBtn.onclick=()=>{const on=!config.reasoning;setToggleState('reasoning',on);vscode.postMessage({type:'toggleReasoning',enabled:on})};
-document.getElementById('settingReasoning').onchange=e=>{const on=!!e.target.checked;setToggleState('reasoning',on);vscode.postMessage({type:'toggleReasoning',enabled:on})};
-document.getElementById('settingMemory').onchange=e=>{const on=!!e.target.checked;setToggleState('memoryEnabled',on);vscode.postMessage({type:'toggleMemory',enabled:on})};
-document.getElementById('settingAutoSave').onchange=e=>{const on=!!e.target.checked;setToggleState('autoSaveChats',on);vscode.postMessage({type:'saveSettings',autoSaveChats:on})};document.getElementById('clearAllowedCommands').onclick=()=>{if(confirm('Clear all remembered command permissions? Future command requests will ask again.'))vscode.postMessage({type:'clearAllowedCommands'})};
-const sModel=document.getElementById('settingModel');const sBase=document.getElementById('settingBaseUrl');const sMax=document.getElementById('settingMaxTokens');const sRounds=document.getElementById('settingMaxToolRounds');const sReasoning=document.getElementById('settingReasoning');const sMemory=document.getElementById('settingMemory');const sAuto=document.getElementById('settingAutoSave');const sPersona=document.getElementById('settingPersona');const sTone=document.getElementById('settingTone');const sExpertise=document.getElementById('settingExpertise');const sLanguage=document.getElementById('settingLanguage');const sCodeStyle=document.getElementById('settingCodeStyle');
-function setSelectValue(select,value){const v=String(value??'');if(v&&![...select.options].some(option=>option.value===v)){const option=el('option');option.value=v;option.textContent=v;select.append(option)}select.value=v}
-function applyConfig(c){
-if(!c||typeof c!=='object')return;
-config={...config,...c};
-if(Object.prototype.hasOwnProperty.call(c,'reasoning')){sReasoning.checked=!!c.reasoning;thinkBtn.classList.toggle('on',!!c.reasoning)}
-if(Object.prototype.hasOwnProperty.call(c,'memoryEnabled'))sMemory.checked=!!c.memoryEnabled;
-if(Object.prototype.hasOwnProperty.call(c,'autoSaveChats'))sAuto.checked=!!c.autoSaveChats;
-if(Object.prototype.hasOwnProperty.call(c,'autoMode')){const autoBtn=document.getElementById('autoModeBtn');if(autoBtn){autoBtn.classList.toggle('on',!!c.autoMode);autoBtn.setAttribute('aria-pressed',String(!!c.autoMode))}const autoSetting=document.getElementById('settingAutoMode');if(autoSetting)autoSetting.checked=!!c.autoMode}
-if(c.persona!==undefined)setSelectValue(sPersona,c.persona);
-if(c.tone!==undefined)setSelectValue(sTone,c.tone);
-if(c.expertise!==undefined&&Array.isArray(c.expertise))setSelectValue(sExpertise,c.expertise.join(', '));
-if(c.responseLanguage!==undefined)setSelectValue(sLanguage,c.responseLanguage);
-if(c.codeStyle!==undefined)setSelectValue(sCodeStyle,c.codeStyle);
-if(c.model!==undefined)sModel.value=c.model;
-if(c.baseUrl!==undefined)sBase.value=c.baseUrl;
-if(c.maxTokens!==undefined)sMax.value=c.maxTokens;
-if(c.maxToolRounds!==undefined)sRounds.value=c.maxToolRounds
-}
-function saveTextSettings(){vscode.postMessage({type:'saveSettings',model:sModel.value,baseUrl:sBase.value,maxTokens:Number(sMax.value)||0,maxToolRounds:Number(sRounds.value)||0});vscode.postMessage({type:'setPerson',persona:sPersona.value,tone:sTone.value,expertise:sExpertise.value.split(',').map(s=>s.trim()).filter(Boolean),responseLanguage:sLanguage.value,codeStyle:sCodeStyle.value})}
-[sModel,sBase,sMax,sRounds,sPersona,sTone,sExpertise,sLanguage,sCodeStyle].forEach(node=>node.addEventListener('change',saveTextSettings));
-window.addEventListener('message',event=>{const m=event.data;switch(m.type){case'contextPreview':{break}case'ready':applyConfig(m.config);installContextSources(m.contextSources);chats=m.chats||[];renderChats();keyStatus.textContent=m.hasKey?'NVIDIA API key is configured.':'NVIDIA API key is not configured.';setStatus(m.hasKey?'Ready · NVIDIA API key configured':'Add your NVIDIA API key in Settings',false);showView('list');break;case'status':setStatus(m.text,busy);break;case'userMessage':break;case'assistantStart':break;case'assistantResume':resumeAssistant();break;case'delta':appendText(currentAssistant,m.text);setStatus('Generating response…',true);break;case'reasoningDelta':addReasoning(m.text);setStatus('Thinking…',true);break;case'reasoning':addReasoning(m.text);break;case'toolStart':toolStart(m.name,m.args,m.id);setStatus('Using '+m.name+'…',true);break;case'toolDone':toolDone(m.name,m.result,m.status,m.id);break;case'approval':approvalCard(m);setStatus('Waiting for your approval…',false);break;case'approvalResolved':{const c=approvals.get(m.id);if(c){c.card.querySelector('.actions').textContent=m.approved?(m.decision==='allow'?'Allowed · applying…':'Allowed once · applying…'):'Cancelled';c.state.textContent=m.approved?(m.decision==='allow'?'Allowed · applying…':'Allowed once · applying…'):'Cancelled by user';c.card.style.opacity='.8';c.card.dataset.resolved=m.approved?'true':'false';if(!m.approved)c.card.remove();setStatus(m.approved?'Permission granted · applying…':'Operation cancelled',!!m.approved)}break}case'approvalExpired':{const c=approvals.get(m.id);if(c){c.state.textContent='Approval expired';c.card.remove();c.inline.remove()} setStatus('Approval expired',false);break}case'approvalCancelled':{const c=approvals.get(m.id);if(c){c.state.textContent='Request cancelled';c.card.remove();c.inline.remove()}setStatus('Request cancelled',false);break}case'editProgress':updateEditProgress(m);break;case'keyState':keyStatus.textContent=m.text;setStatus(m.text,false);break;case'assistantDone':currentAssistant=null;currentRaw='';setStatus('Ready',false);setBusy(false);break;case'assistantStopped':if(currentAssistant&&!currentRaw.trim())currentAssistant.closest('.message')?.remove();currentAssistant=null;currentRaw='';setStatus('Stopped',false);setBusy(false);break;case'error':{appendText(currentAssistant,'\n\nError: '+m.text);currentAssistant=null;setStatus('Request failed',false);setBusy(false);break}case'busy':setBusy(m.value);break;case'chatCreated':currentChatId=m.id;vscode.setState({chatId:m.id});showView('chat');renderChats();break;case'chatsUpdated':chats=m.chats||[];renderChats();break;case'chatLoaded':currentChatId=m.id;vscode.setState({chatId:m.id});showView('chat');renderChats();document.getElementById('welcome')?.remove();feed.innerHTML='';approvalDock.innerHTML='';approvals.clear();editProgressCards.clear();toolCards.clear();(m.messages||[]).forEach((msg,index,all)=>{if(msg.role==='user'){addUser(msg.content||'')}else if(msg.role==='assistant'&&msg.tool_calls?.length){msg.tool_calls.forEach(call=>{let args={};try{args=JSON.parse(call.function.arguments||'{}')}catch{}toolStart(call.function.name,args,call.id);const result=all.find(item=>item.role==='tool'&&item.tool_call_id===call.id);if(result)toolDone(call.function.name,result.content||'',result.content?.includes('SUCCESS')||/Successfully (applied|created)/i.test(result.content||'')?'success':/rejected/i.test(result.content||'')?'rejected':/cancelled/i.test(result.content||'')?'cancelled':/invalid|Duplicate tool call|limit reached/i.test(result.content||'')?'invalid':String(result.content||'').startsWith('Tool error:')?'failed':'success',call.id)})}else if(msg.role==='assistant'&&msg.content){startAssistant();appendText(currentAssistant,msg.content)}});currentAssistant=null;currentRaw='';if(m.busy){if(!m.waitingForApproval)startAssistant();setBusy(true)}else setStatus('Ready',false);break;case'configUpdated':applyConfig(m.config);break;case'reset':currentChatId=null;vscode.setState({chatId:null});approvalDock.innerHTML='';approvals.clear();showView('chat');feed.innerHTML='';const w=el('div','welcome');w.id='welcome';w.innerHTML='<h2>New conversation</h2><p>Ask me to understand your codebase, fix bugs, or implement a feature.</p>';feed.append(w);currentAssistant=null;currentRaw='';setStatus('New chat',false);break}});
-window.addEventListener('message',event=>{const m=event.data;if(m.type==='ready'){hasApiKey=!!m.hasKey;showView(hasApiKey?'list':'onboarding')}else if(m.type==='keyState'){hasApiKey=!!m.hasKey;showView(hasApiKey?'list':'onboarding')}});
-updateContextUi();showView('list');vscode.postMessage({type:'ready',chatId:currentChatId});
-</script></body></html>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px var(--vscode-font-family);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--fg);
+        border-radius: 6px;
+        padding: 6px 10px;
+      }
+      button:hover {
+        background: var(--hover);
+      }
+      button.primary {
+        background: var(--accent);
+        color: var(--accentFg);
+        border-color: transparent;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      button.icon {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+      }
+      .icon svg {
+        display: block;
+      }
+      .chatAction {
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        color: var(--muted);
+        opacity: 0;
+        transition:
+          opacity 0.12s ease,
+          background 0.12s ease,
+          color 0.12s ease;
+      }
+      .chatItem:hover .chatAction,
+      .chatItem:focus-within .chatAction {
+        opacity: 1;
+      }
+      .chatAction:hover {
+        background: var(--hover);
+        color: var(--fg);
+      }
+      .chatAction.danger:hover {
+        background: var(--error);
+        color: #fff;
+        border-color: transparent;
+      }
+      @media (hover: none) {
+        .chatAction {
+          opacity: 1;
+        }
+      }
+      button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 0;
+      }
+      button {
+        transition:
+          background 0.12s ease,
+          color 0.12s ease,
+          border-color 0.12s ease,
+          opacity 0.12s ease;
+      }
+      .withIcon {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .withIcon svg {
+        display: block;
+      }
+      .danger:hover {
+        background: var(--error);
+        border-color: transparent;
+        color: #fff;
+      }
+      .primary:hover {
+        filter: brightness(1.08);
+      }
+      .primary:active {
+        filter: brightness(0.95);
+      }
+      .send {
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        border-radius: 10px;
+        flex-shrink: 0;
+      }
+      .send:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        filter: none;
+      }
+      button.icon:hover {
+        background: var(--hover);
+      }
+      button.toggle {
+        background: var(--input);
+        border-color: var(--border);
+      }
+      button.toggle.on {
+        background: var(--accent);
+        color: var(--accentFg);
+        border-color: transparent;
+      }
+      hr {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 6px 0;
+      }
+
+      /* Layout shell */
+      .shell {
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+      }
+      aside.sidebar {
+        width: 260px;
+        background: var(--sidebar);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+      }
+      main.panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      /* Header */
+      .top {
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .top .brand {
+        font-weight: 650;
+        letter-spacing: 0.1px;
+      }
+      .top .sub {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .top .controls {
+        display: flex;
+        gap: 5px;
+      }
+      input.search {
+        width: 100%;
+        background: var(--input);
+        border: 1px solid var(--border);
+        color: var(--fg);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font: inherit;
+        margin-top: 4px;
+      }
+
+      /* Chat list */
+      .list {
+        flex: 1;
+        overflow: auto;
+        padding: 8px 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .list h3 {
+        font-size: 11px;
+        color: var(--muted);
+        margin: 8px 10px 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }
+      .chatItem {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        border: 1px solid transparent;
+        background: transparent;
+      }
+      .chatItem:hover {
+        background: var(--hover);
+      }
+      .chatItem.active {
+        background: var(--active);
+        color: var(--activeFg);
+        border-color: var(--border);
+      }
+      .chatItem .meta {
+        flex: 1;
+        overflow: hidden;
+      }
+      .chatItem .title {
+        font-size: 12.5px;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .chatItem .sub {
+        font-size: 10px;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .chatItem .actions {
+        opacity: 0;
+        display: flex;
+        gap: 4px;
+      }
+      .chatItem:hover .actions,
+      .chatItem.active .actions {
+        opacity: 1;
+      }
+      .chatItem .actions button {
+        padding: 4px 6px;
+        font-size: 11px;
+      }
+      .chatItem .renameInput {
+        flex: 1;
+        min-width: 0;
+        background: var(--input);
+        border: 1px solid var(--border);
+        color: var(--fg);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font: inherit;
+        font-size: 12px;
+      }
+      .chatItem .renameActions {
+        display: flex;
+        gap: 4px;
+      }
+      .chatItem .renameBtn {
+        padding: 4px 6px;
+        font-size: 11px;
+      }
+      .empty {
+        padding: 16px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      /* Feed */
+      .feed {
+        flex: 1;
+        overflow: auto;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 0;
+      }
+      .welcome {
+        margin: auto 0;
+        text-align: center;
+        color: var(--muted);
+        padding: 16px 6px;
+      }
+      .welcome h2 {
+        font-size: 16px;
+        color: var(--fg);
+        margin-bottom: 6px;
+      }
+      .welcome p {
+        line-height: 1.5;
+      }
+      .suggestions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: center;
+        margin-top: 12px;
+      }
+      .suggestions button {
+        font-size: 11px;
+      }
+      .message {
+        max-width: 100%;
+        line-height: 1.55;
+        overflow-wrap: anywhere;
+      }
+      .message.user {
+        background: var(--vscode-textBlockQuote-background);
+        border: 1px solid var(--border);
+        padding: 9px 10px;
+        border-radius: 9px;
+        align-self: flex-end;
+        max-width: 94%;
+        white-space: pre-wrap;
+      }
+      .message.assistant {
+        white-space: normal;
+      }
+      .message.assistant .content {
+        white-space: pre-wrap;
+      }
+      .message .label {
+        font-size: 10px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        margin-bottom: 4px;
+      }
+      .message pre {
+        white-space: pre-wrap;
+        overflow: auto;
+        background: var(--vscode-textCodeBlock-background);
+        padding: 9px;
+        border-radius: 6px;
+      }
+      .expandable .args {
+        color: var(--muted);
+        white-space: nowrap;
+        font-size: 10px;
+        margin: 4px 0;
+        display: inline;
+      }
+      .expandable summary {
+        color: var(--muted);
+        cursor: pointer;
+        padding: 5px 8px;
+        font-size: 11px;
+        list-style: none;
+        background: transparent;
+        border-bottom: 1px solid var(--border);
+        user-select: none;
+      }
+      .expandable summary:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+      }
+      .expandable[open] summary {
+        border-bottom: 1px solid transparent;
+        border-radius: 6px 6px 0 0;
+        margin-bottom: -1px;
+      }
+      .expandable[open] pre {
+        white-space: pre-wrap;
+        background: var(--vscode-textCodeBlock-background);
+        padding: 8px;
+        margin: 0;
+        font-size: 10px;
+        overflow: auto;
+        border-top: 1px solid var(--border);
+      }
+      .expandable .result {
+        color: var(--muted);
+        white-space: pre-wrap;
+        margin-top: 4px;
+        font-size: 10px;
+        max-height: 240px;
+        overflow: auto;
+      }
+      .expandable .done {
+        color: var(--vscode-descriptionForeground);
+        margin-left: 6px;
+        font-size: 10px;
+      }
+      .approval {
+        border: 1px solid var(--warning);
+        border-radius: 8px;
+        padding: 10px;
+        background: var(--card);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .approval h4 {
+        margin: 0;
+        font-size: 13px;
+      }
+      .approval .desc {
+        color: var(--muted);
+      }
+      .preview {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      .preview pre {
+        margin: 0;
+        max-height: 180px;
+        font-size: 10px;
+        white-space: pre-wrap;
+        overflow: auto;
+        padding: 7px;
+        background: var(--vscode-textCodeBlock-background);
+        border-radius: 5px;
+      }
+      .approval .actions {
+        display: flex;
+        gap: 7px;
+        justify-content: flex-end;
+      }
+      .approval .danger {
+        border-color: var(--error);
+        color: var(--error);
+      }
+      .composer {
+        border-top: 1px solid var(--border);
+        padding: 9px;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+        flex-shrink: 0;
+      }
+      .textareaWrap {
+        border: 1px solid var(--vscode-input-border, var(--border));
+        background: var(--input);
+        border-radius: 8px;
+        padding: 7px;
+      }
+      .textareaWrap:focus-within {
+        border-color: var(--vscode-focusBorder);
+      }
+      textarea {
+        width: 100%;
+        resize: vertical;
+        min-height: 66px;
+        max-height: 180px;
+        background: transparent;
+        border: 0;
+        outline: 0;
+        color: var(--fg);
+        font: inherit;
+      }
+      .composerFoot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .status {
+        font-size: 10px;
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .actions {
+        display: flex;
+        gap: 6px;
+      }
+      .key {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .send {
+        min-width: 62px;
+      }
+      .contextRow {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        position: relative;
+      }
+      .contextMentionBtn {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--input);
+        color: var(--fg);
+        cursor: pointer;
+      }
+      .contextMentionBtn:hover {
+        background: var(--hover);
+      }
+      .contextPills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .contextPill {
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--accent);
+        color: var(--accentFg);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .contextPill .remove {
+        font-size: 10px;
+        cursor: pointer;
+        padding: 0 2px;
+      }
+      .contextMenu {
+        position: absolute;
+        bottom: calc(100% + 4px);
+        left: 0;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.25);
+        z-index: 50;
+        min-width: 170px;
+      }
+      .contextMenuItem {
+        padding: 6px 10px;
+        font-size: 11px;
+        color: var(--fg);
+        cursor: pointer;
+      }
+      .contextMenuItem:hover {
+        background: var(--hover);
+      }
+      .contextSummary {
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .hidden {
+        display: none !important;
+      }
+      a {
+        color: var(--vscode-textLink-foreground);
+      }
+      .fatalError {
+        margin: 8px;
+        padding: 10px;
+        border: 1px solid var(--vscode-errorForeground);
+        border-radius: 7px;
+        background: var(--vscode-inputValidation-errorBackground);
+        color: var(--vscode-errorForeground);
+        font-size: 12px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
+      /* Memory & reasoning chips */
+      .chip {
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--input);
+        color: var(--muted);
+      }
+      .chip.on {
+        background: var(--accent);
+        color: var(--accentFg);
+        border-color: transparent;
+      }
+
+      /* Markdown */
+      .message.assistant h1,
+      .message.assistant h2,
+      .message.assistant h3 {
+        font-size: 13px;
+        margin: 8px 0 4px;
+        color: var(--fg);
+      }
+      .message.assistant h1 {
+        font-size: 15px;
+      }
+      .message.assistant p {
+        margin: 6px 0;
+        line-height: 1.6;
+      }
+      .message.assistant a {
+        color: var(--vscode-textLink-foreground);
+        text-decoration: underline;
+      }
+      .message.assistant code {
+        background: var(--vscode-textCodeBlock-background);
+        padding: 1px 4px;
+        border-radius: 3px;
+        font-family: var(--vscode-editor-font-family);
+        font-size: 11px;
+      }
+      .message.assistant pre {
+        white-space: pre-wrap;
+        overflow: auto;
+        background: var(--vscode-textCodeBlock-background);
+        padding: 9px;
+        border-radius: 6px;
+        margin: 6px 0;
+      }
+      .message.assistant pre code {
+        padding: 0;
+        background: transparent;
+      }
+      .message.assistant ul,
+      .message.assistant ol {
+        margin: 6px 0 6px 20px;
+        padding: 0;
+      }
+      .message.assistant blockquote {
+        border-left: 3px solid var(--border);
+        margin: 8px 0;
+        padding: 4px 12px;
+        color: var(--muted);
+      }
+      .message.assistant table {
+        border-collapse: collapse;
+        margin: 8px 0;
+      }
+      .message.assistant th,
+      .message.assistant td {
+        border: 1px solid var(--border);
+        padding: 4px 8px;
+        text-align: left;
+      }
+      .message.assistant hr {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 12px 0;
+      }
+
+      /* Settings page */
+      .settings {
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        overflow-y: auto;
+      }
+      .settings h2 {
+        font-size: 15px;
+        margin: 0 0 6px;
+        color: var(--fg);
+      }
+      .settings .section {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px;
+        background: var(--card);
+      }
+      .settings .section h3 {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 0 0 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }
+      .settings .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .settings .row:last-child {
+        border-bottom: none;
+      }
+      .settings .label {
+        flex: 1;
+        min-width: 140px;
+      }
+      .settings .label b {
+        color: var(--fg);
+        display: block;
+      }
+      .settings .desc {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .settings .text {
+        min-width: 140px;
+        flex: 1;
+        background: var(--input);
+        border: 1px solid var(--border);
+        color: var(--fg);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font: inherit;
+      }
+      .settings .toggle {
+        width: 44px;
+        height: 24px;
+        background: var(--input);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        cursor: pointer;
+        position: relative;
+        appearance: none;
+        outline: none;
+      }
+      .settings .toggle:checked {
+        background: var(--accent);
+        border-color: transparent;
+      }
+      .settings .toggle:checked::after {
+        left: 22px;
+        background: var(--accentFg);
+      }
+      .settings .toggle::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 18px;
+        height: 18px;
+        background: var(--fg);
+        border-radius: 50%;
+        transition: transform 0.2s;
+      }
+      .badge {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 8px;
+        background: var(--input);
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+
+      /* Focused, single-screen navigation */
+      .shell {
+        display: flex;
+        width: 100%;
+        height: 100vh;
+        overflow: hidden;
+      }
+      main.panel {
+        width: 100%;
+        height: 100%;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .top {
+        gap: 10px;
+      }
+      .top .brandBlock {
+        flex: 1;
+        min-width: 0;
+      }
+      .top .controls {
+        margin-left: auto;
+      }
+      .chatListView {
+        flex: 1;
+        overflow: auto;
+        padding: 22px 16px;
+      }
+      .chatListInner {
+        width: 100%;
+        max-width: 720px;
+        margin: 0 auto;
+      }
+      .chatListHead {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 6px 0 18px;
+      }
+      .chatListHead h2 {
+        font-size: 18px;
+        margin: 0 0 4px;
+      }
+      .chatListHead p {
+        color: var(--muted);
+        margin: 0;
+        font-size: 12px;
+      }
+      .chatListView input.search {
+        margin: 0 0 10px;
+      }
+      .chatListView .list {
+        padding: 4px 0;
+      }
+      .chatListView .chatItem {
+        padding: 12px;
+        border: 1px solid var(--border);
+        margin-bottom: 6px;
+        background: var(--card);
+      }
+      .chatListView .chatItem .actions {
+        opacity: 1;
+      }
+      .chatAppView {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .settings {
+        width: 100%;
+        max-width: 760px;
+        margin: 0 auto;
+        flex: 1;
+        min-height: 0;
+      }
+      .keySettings {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .keyActions {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+      .keyActions .danger {
+        color: var(--error);
+        border-color: var(--error);
+      }
+      .status.working:before {
+        content: '';
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border: 2px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        margin-right: 7px;
+        vertical-align: -2px;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .edit-progress {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card);
+        padding: 9px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      .edit-progress .line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .edit-progress .spinner {
+        width: 12px;
+        height: 12px;
+        border: 2px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        flex-shrink: 0;
+      }
+      .edit-progress.done .spinner {
+        animation: none;
+        border: 0;
+        width: 14px;
+        height: 14px;
+      }
+      .progressTrack {
+        height: 3px;
+        border-radius: 4px;
+        background: var(--border);
+        overflow: hidden;
+      }
+      .progressTrack span {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+        transition: width 0.18s ease;
+      }
+      .edit-progress.done .progressTrack span {
+        width: 100%;
+        background: var(--vscode-testing-iconPassed);
+      }
+      .preview {
+        align-items: stretch;
+      }
+      .previewCol {
+        min-width: 0;
+      }
+      .previewLabel {
+        font-size: 10px;
+        color: var(--muted);
+        margin: 0 0 4px;
+      }
+      .preview pre {
+        max-height: 240px;
+      }
+      .approval .desc.path {
+        font-family: var(--vscode-editor-font-family);
+        font-size: 11px;
+      }
+      .chatItem .actions button {
+        opacity: 0.8;
+      }
+      .chatItem .actions button:hover {
+        opacity: 1;
+      }
+      .chatItem .sub {
+        margin-top: 3px;
+      }
+      .feed {
+        scroll-behavior: smooth;
+      }
+      .composer {
+        background: var(--bg);
+      }
+      .approvalDock {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 35vh;
+        overflow: auto;
+      }
+      .approvalDock:empty {
+        display: none;
+      }
+      .approvalDock .approval {
+        padding: 8px;
+        border-color: var(--warning);
+      }
+      .approvalDock .preview {
+        display: none;
+      }
+      .approval-inline {
+        border-left: 2px solid var(--warning);
+        padding: 7px 9px;
+        margin: 5px 0 10px;
+        background: var(--card);
+        border-radius: 0 7px 7px 0;
+      }
+      .diffView {
+        font: 11px var(--vscode-editor-font-family);
+        white-space: pre;
+        overflow: auto;
+        max-height: 260px;
+        background: var(--vscode-textCodeBlock-background);
+        border-radius: 5px;
+        padding: 7px;
+      }
+      .diffLine {
+        display: block;
+        white-space: pre;
+      }
+      .diffLine.add {
+        color: var(
+          --vscode-gitDecoration-addedResourceForeground,
+          var(--vscode-testing-iconPassed)
+        );
+      }
+      .diffLine.remove {
+        color: var(--vscode-gitDecoration-deletedResourceForeground, var(--error));
+      }
+      .approval-inline .approval-state {
+        font-size: 10px;
+        color: var(--muted);
+        margin-top: 5px;
+      }
+      .loadingState {
+        color: var(--muted);
+        font-size: 12px;
+        padding: 3px 0;
+      }
+      .loadingDots {
+        display: inline-flex;
+        gap: 4px;
+        margin-left: 7px;
+      }
+      .loadingDots i {
+        width: 4px;
+        height: 4px;
+        background: var(--muted);
+        border-radius: 50%;
+        animation: pulse 1s infinite;
+      }
+      .loadingDots i:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+      .loadingDots i:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+      @keyframes pulse {
+        0%,
+        80%,
+        100% {
+          opacity: 0.25;
+          transform: translateY(0);
+        }
+        40% {
+          opacity: 1;
+          transform: translateY(-3px);
+        }
+      }
+      @media (max-width: 420px) {
+        .chatListView {
+          padding: 16px 10px;
+        }
+        .chatListHead {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        .chatListHead button {
+          width: 100%;
+        }
+        .keySettings {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        .keyActions {
+          width: 100%;
+        }
+        .keyActions button {
+          flex: 1;
+        }
+        .preview {
+          grid-template-columns: 1fr;
+        }
+        .top {
+          padding: 0 8px;
+        }
+      }
+
+      /* GitHub-flavoured Markdown tables and block elements */
+      .markdownTableWrap {
+        max-width: 100%;
+        overflow-x: auto;
+        margin: 12px 0;
+        border: 1px solid var(--vscode-panel-border);
+        border-radius: 8px;
+      }
+      .markdownTable {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 13px;
+        min-width: 360px;
+      }
+      .markdownTable th,
+      .markdownTable td {
+        padding: 8px 11px;
+        border-bottom: 1px solid var(--vscode-panel-border);
+        border-right: 1px solid var(--vscode-panel-border);
+        text-align: left;
+        vertical-align: top;
+      }
+      .markdownTable th {
+        background: var(--vscode-editor-inactiveSelectionBackground);
+        font-weight: 650;
+      }
+      .markdownTable tr:last-child td {
+        border-bottom: 0;
+      }
+      .markdownTable th:last-child,
+      .markdownTable td:last-child {
+        border-right: 0;
+      }
+      .content hr {
+        border: 0;
+        border-top: 1px solid var(--vscode-panel-border);
+        margin: 14px 0;
+      }
+      .content img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 6px;
+      }
+      .content input[type='checkbox'] {
+        vertical-align: middle;
+        margin-right: 6px;
+      }
+      .content blockquote {
+        border-left: 3px solid var(--vscode-textBlockQuote-border);
+        margin: 8px 0;
+        padding: 4px 12px;
+        color: var(--vscode-descriptionForeground);
+        background: var(--vscode-textBlockQuote-background);
+      }
+      .content pre {
+        max-width: 100%;
+        overflow: auto;
+      }
+    </style>
+    <style>
+      .onboarding {
+        flex: 1;
+        overflow: auto;
+        padding: 24px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .onboardingCard {
+        width: 100%;
+        max-width: 560px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 24px;
+        background: var(--card);
+      }
+      .onboardingCard h1 {
+        font-size: 20px;
+        margin: 0 0 8px;
+        color: var(--fg);
+      }
+      .onboardingCard > p {
+        line-height: 1.55;
+        color: var(--muted);
+        margin: 0 0 20px;
+      }
+      .onboardingSteps {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .onboardingSteps li {
+        display: flex;
+        gap: 12px;
+        line-height: 1.5;
+      }
+      .onboardingStepNumber {
+        width: 24px;
+        height: 24px;
+        flex-shrink: 0;
+        border: 1px solid var(--border);
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        color: var(--fg);
+      }
+      .onboardingSteps b {
+        color: var(--fg);
+      }
+      .onboardingActions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 22px;
+      }
+      .onboardingPrivacy {
+        font-size: 11px;
+        color: var(--muted);
+        margin: 14px 0 0;
+      }
+      @media (max-width: 420px) {
+        .onboarding {
+          padding: 16px 10px;
+        }
+        .onboardingCard {
+          padding: 18px;
+        }
+      }
+      .msgError {
+        margin-top: 8px;
+        padding: 8px 11px;
+        border: 1px solid var(--error);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--error) 12%, transparent);
+        color: var(--error);
+        font-size: 12px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .toast {
+        position: fixed;
+        bottom: 18px;
+        left: 50%;
+        transform: translate(-50%, 12px);
+        max-width: min(420px, 88%);
+        padding: 9px 14px;
+        border-radius: 9px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--fg);
+        font-size: 12px;
+        line-height: 1.45;
+        opacity: 0;
+        transition:
+          opacity 0.2s ease,
+          transform 0.2s ease;
+        box-shadow: var(--shadow2);
+        z-index: 9999;
+        pointer-events: none;
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      .toast.error {
+        border-color: var(--error);
+        color: var(--error);
+      }
+      .confirmOverlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        animation: fadeIn 0.15s ease;
+      }
+      .confirmBox {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 18px;
+        width: min(340px, 90%);
+        box-shadow: var(--shadow2);
+      }
+      .confirmMsg {
+        margin: 0 0 14px;
+        font-size: 12.5px;
+        line-height: 1.55;
+        color: var(--fg);
+      }
+      .confirmRow {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .confirmCancel {
+        background: transparent;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .toast,
+        .confirmOverlay,
+        .chatAction,
+        button {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <main class="panel">
+        <div id="fatalError" class="fatalError hidden" role="alert"></div>
+        <div class="top">
+          <button
+            id="backToList"
+            class="icon hidden"
+            title="Back to chats"
+            aria-label="Back to chats"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M10.5 3 5.5 8l5 5" />
+            </svg>
+          </button>
+          <div class="brandBlock">
+            <div class="brand">Nemotron Agent</div>
+            <div class="sub">Workspace coding assistant</div>
+          </div>
+          <div class="controls">
+            <button id="settingsBtn" class="icon" title="Settings" aria-label="Settings">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="8" cy="8" r="2.2" />
+                <path
+                  d="M8 1.8v1.9M8 12.3v1.9M13.4 8h-1.9M4.5 8H2.6M11.8 4.2l-1.35 1.35M5.55 10.45 4.2 11.8M11.8 11.8l-1.35-1.35M5.55 5.55 4.2 4.2"
+                />
+              </svg></button
+            ><button id="newBtn" class="icon primary" title="New chat">＋</button>
+          </div>
+        </div>
+
+        <section id="onboardingView" class="onboarding hidden" aria-labelledby="onboardingTitle">
+          <div class="onboardingCard">
+            <h1 id="onboardingTitle">Let’s get your agent ready</h1>
+            <p>Connect an NVIDIA API key to start chatting. It only takes a moment:</p>
+            <ol class="onboardingSteps">
+              <li>
+                <span class="onboardingStepNumber">1</span
+                ><span
+                  >Sign in to NVIDIA Build or create an account. Complete the email and mobile
+                  number verification if prompted.</span
+                >
+              </li>
+              <li>
+                <span class="onboardingStepNumber">2</span
+                ><span
+                  >On the API keys page, create a new key and copy it. Keep the key private.</span
+                >
+              </li>
+              <li>
+                <span class="onboardingStepNumber">3</span
+                ><span
+                  >Return here, paste your key into the secure prompt, and you’re ready to
+                  chat.</span
+                >
+              </li>
+            </ol>
+            <div class="onboardingActions">
+              <button id="openApiKeyPageBtn" class="primary">Open NVIDIA API keys</button>
+              <button id="onboardingSetKeyBtn">I have a key — enter it</button>
+            </div>
+            <p class="onboardingPrivacy">
+              Your key is stored in VS Code Secret Storage and is never shown in the chat.
+            </p>
+          </div>
+        </section>
+
+        <section id="chatListView" class="chatListView">
+          <div class="chatListInner">
+            <div class="chatListHead">
+              <div>
+                <h2>Your chats</h2>
+                <p>Continue a previous task or start something new.</p>
+              </div>
+              <button
+                id="listNewBtn"
+                class="primary withIcon"
+                title="New chat"
+                aria-label="New chat"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M8 3v10M3 8h10" /></svg
+                ><span>New chat</span>
+              </button>
+            </div>
+            <input id="chatSearch" class="search" placeholder="Search chats…" autocomplete="off" />
+            <div class="list">
+              <div id="chatList"><div class="empty">No saved chats yet.</div></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="chatAppView" class="chatAppView hidden">
+          <div id="settingsView" class="settings hidden">
+            <h2>Settings</h2>
+            <div class="section">
+              <h3>API key</h3>
+              <div class="keySettings">
+                <div>
+                  <b id="keyStatus">NVIDIA API key is not configured.</b
+                  ><span class="desc">Stored securely in VS Code Secret Storage.</span>
+                </div>
+                <div class="keyActions">
+                  <button id="keyBtn" class="primary">Set / Update key</button
+                  ><button id="clearKeyBtn" class="danger">Remove</button>
+                </div>
+              </div>
+            </div>
+            <div class="section">
+              <h3>Model</h3>
+              <div class="row">
+                <div class="label">
+                  <b>Model ID</b><span class="desc">NVIDIA NIM model to use.</span>
+                </div>
+                <input id="settingModel" class="text" />
+              </div>
+              <div class="row">
+                <div class="label">
+                  <b>Base URL</b><span class="desc">OpenAI-compatible API endpoint.</span>
+                </div>
+                <input id="settingBaseUrl" class="text" />
+              </div>
+              <div class="row">
+                <div class="label">
+                  <b>Max output tokens</b
+                  ><span class="desc">Tokens per model turn (1024–65536).</span>
+                </div>
+                <input id="settingMaxTokens" class="text" style="width: 120px" />
+              </div>
+              <div class="row">
+                <div class="label">
+                  <b>Max tool rounds</b
+                  ><span class="desc">Max consecutive tool-calling rounds per request.</span>
+                </div>
+                <input id="settingMaxToolRounds" class="text" style="width: 120px" />
+              </div>
+            </div>
+            <div class="section">
+              <h3>Behavior</h3>
+              <div class="row">
+                <div class="label">
+                  <b>Auto mode</b
+                  ><span class="desc"
+                    >Full permission: skip approval prompts for file operations, terminal commands,
+                    and Git mutations.</span
+                  >
+                </div>
+                <input id="settingAutoMode" type="checkbox" class="toggle" />
+              </div>
+              <div class="row">
+                <div class="label">
+                  <b>Reasoning / Thinking</b
+                  ><span class="desc">Enable Nemotron thinking mode.</span>
+                </div>
+                <input id="settingReasoning" type="checkbox" class="toggle" />
+              </div>
+              <div class="row">
+                <div class="label">
+                  <b>Memory</b
+                  ><span class="desc">Remember facts across chats in this workspace.</span>
+                </div>
+                <input id="settingMemory" type="checkbox" class="toggle" />
+              </div>
+              <div class="row">
+                <div class="label">
+                  <b>Remembered command permissions</b
+                  ><span class="desc"
+                    >Allow commands you previously chose to remember. Clear all saved
+                    permissions.</span
+                  >
+                </div>
+                <button
+                  id="clearAllowedCommands"
+                  title="Clear all remembered command permissions"
+                  aria-label="Clear permissions"
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M4.5 4.5 5 13h6l.5-8.5" /></svg
+                  ><span>Clear permissions</span>
+                </button>
+              </div>
+              <div class="row">
+                <div class="label">
+                  <b>Auto-save chats</b
+                  ><span class="desc">Save conversation history to this workspace.</span>
+                </div>
+                <input id="settingAutoSave" type="checkbox" class="toggle" />
+              </div>
+            </div>
+            <div class="section">
+              <h3>Personalization</h3>
+              <div class="row">
+                <div class="label">
+                  <b>Persona</b
+                  ><span class="desc"
+                    >How Nemotron should behave (e.g. helpful coding assistant).</span
+                  >
+                </div>
+                <select id="settingPersona" class="text">
+                  <option value="helpful coding assistant">Helpful coding assistant</option>
+                  <option value="senior software engineer">Senior software engineer</option>
+                  <option value="pragmatic pair programmer">Pragmatic pair programmer</option>
+                  <option value="careful code reviewer">Careful code reviewer</option>
+                  <option value="patient programming mentor">Patient programming mentor</option>
+                </select>
+              </div>
+              <div class="row">
+                <div class="label">
+                  <b>Tone</b><span class="desc">Preferred tone (e.g. concise, detailed).</span>
+                </div>
+                <select id="settingTone" class="text">
+                  <option value="">Balanced</option>
+                  <option value="concise and direct">Concise</option>
+                  <option value="detailed and explanatory">Detailed</option>
+                  <option value="friendly and conversational">Friendly</option>
+                  <option value="formal and professional">Professional</option>
+                </select>
+              </div>
+              <div class="row">
+                <div class="label">
+                  <b>Expertise</b
+                  ><span class="desc">Primary technical focus for recommendations.</span>
+                </div>
+                <select id="settingExpertise" class="text">
+                  <option value="">General development</option>
+                  <option value="MERN Stack">MERN Stack</option>
+                  <option value="React and frontend">React / Frontend</option>
+                  <option value="Node.js and backend">Node.js / Backend</option>
+                  <option value="TypeScript">TypeScript</option>
+                  <option value="DevOps and deployment">DevOps / Deployment</option>
+                  <option value="Testing and debugging">Testing / Debugging</option>
+                  <option value="Application security">Application Security</option>
+                </select>
+              </div>
+              <div class="row">
+                <div class="label">
+                  <b>Response language</b
+                  ><span class="desc">Language used for explanations and conversation.</span>
+                </div>
+                <select id="settingLanguage" class="text">
+                  <option value="auto">Automatic</option>
+                  <option value="English">English</option>
+                  <option value="Malayalam">Malayalam</option>
+                  <option value="Hindi">Hindi</option>
+                </select>
+              </div>
+              <div class="row">
+                <div class="label">
+                  <b>Code style</b><span class="desc">Preferred implementation style.</span>
+                </div>
+                <select id="settingCodeStyle" class="text">
+                  <option value="follow project conventions">Follow project conventions</option>
+                  <option value="minimal focused changes">Minimal focused changes</option>
+                  <option value="TypeScript-first">TypeScript-first</option>
+                  <option value="JavaScript-first">JavaScript-first</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="feed" id="feed">
+            <div class="welcome" id="welcome">
+              <h2>What are we building?</h2>
+              <p>
+                Ask me to understand your codebase, fix bugs, implement features, or run checks.
+                I’ll ask before editing files or running commands.
+              </p>
+              <div class="suggestions">
+                <button data-prompt="Explore this codebase and explain its architecture.">
+                  Explore codebase</button
+                ><button data-prompt="Find likely bugs and suggest fixes. Do not change files yet.">
+                  Find bugs</button
+                ><button
+                  data-prompt="Review this project and identify the most important improvements."
+                >
+                  Review project
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="composer">
+            <div id="approvalDock" class="approvalDock" aria-live="polite"></div>
+            <div class="textareaWrap">
+              <textarea
+                id="prompt"
+                placeholder="Ask Nemotron to work on your code… (Enter to send, Shift+Enter for newline)"
+              ></textarea>
+            </div>
+            <div class="contextRow" id="contextRow">
+              <div class="contextMenu hidden" id="contextMenu">
+                <div class="contextMenuItem" data-kind="activeEditor">@ActiveFile</div>
+                <div class="contextMenuItem" data-kind="selectedCode">@SelectedCode</div>
+                <div class="contextMenuItem" data-kind="problems">@Problems</div>
+              </div>
+              <div class="contextPills" id="contextPills"></div>
+            </div>
+            <div class="composerFoot">
+              <div class="status" id="status">Connect your NVIDIA API key to begin</div>
+              <div class="actions" id="composerActions">
+                <button
+                  id="autoModeBtn"
+                  class="toggle"
+                  title="Auto mode: skip all approval prompts"
+                >
+                  Auto
+                </button>
+                <button id="thinkBtn" class="toggle" title="Think on/off">Think</button>
+                <button
+                  id="stopBtn"
+                  class="hidden danger"
+                  title="Stop generating"
+                  aria-label="Stop generating"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <rect x="4" y="4" width="8" height="8" rx="1.4" />
+                  </svg>
+                </button>
+                <button
+                  id="sendBtn"
+                  class="primary send"
+                  title="Send message"
+                  aria-label="Send message"
+                >
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script nonce="{{NONCE}}">
+      // Keep this bootstrap separate from the main app script: it can report a syntax
+      // error in that script before the app's own error handlers have had a chance to run.
+      window.addEventListener('error', (event) => {
+        const banner = document.getElementById('fatalError');
+        if (banner) {
+          banner.textContent =
+            'Nemotron Agent could not start: ' + (event.message || 'Webview script error');
+          banner.classList.remove('hidden');
+        }
+      });
+      window.addEventListener('unhandledrejection', (event) => {
+        const banner = document.getElementById('fatalError');
+        if (banner) {
+          const reason = event.reason?.message || event.reason || 'Asynchronous UI error';
+          banner.textContent = 'Nemotron Agent UI error: ' + String(reason);
+          banner.classList.remove('hidden');
+        }
+      });
+    </script>
+    <script nonce="{{NONCE}}">
+      const vscode = acquireVsCodeApi();
+      const savedWebviewState = vscode.getState() || {};
+      const fatalError = document.getElementById('fatalError');
+      function reportClientError(message) {
+        const text = String(message || 'Unknown webview error');
+        if (fatalError) {
+          fatalError.textContent = 'Nemotron Agent UI error: ' + text;
+          fatalError.classList.remove('hidden');
+        }
+        const status = document.getElementById('status');
+        if (status) {
+          status.textContent = 'UI error — see details above';
+          status.classList.remove('working');
+        }
+        try {
+          vscode.postMessage({ type: 'clientError', text });
+        } catch {}
+      }
+      window.addEventListener('error', (event) =>
+        reportClientError(event.message || 'A script failed to load')
+      );
+      window.addEventListener('unhandledrejection', (event) =>
+        reportClientError(
+          event.reason?.message || event.reason || 'An asynchronous operation failed'
+        )
+      );
+      const feed = document.getElementById('feed');
+      const input = document.getElementById('prompt');
+      const sendBtn = document.getElementById('sendBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const statusEl = document.getElementById('status');
+      const chatListEl = document.getElementById('chatList');
+      const chatListView = document.getElementById('chatListView');
+      const chatAppView = document.getElementById('chatAppView');
+      const onboardingView = document.getElementById('onboardingView');
+      const settingsView = document.getElementById('settingsView');
+      const backToList = document.getElementById('backToList');
+      const keyStatus = document.getElementById('keyStatus');
+      let currentAssistant = null;
+      let currentRaw = '';
+      let busy = false;
+      let currentChatId = savedWebviewState.chatId || null;
+      let chats = [];
+      let currentScreen = 'list';
+      let hasApiKey = false;
+      const approvals = new Map();
+      const editProgressCards = new Map();
+      const toolCards = new Map();
+      const approvalDock = document.getElementById('approvalDock');
+      let config = {
+        reasoning: true,
+        persona: '',
+        memoryEnabled: false,
+        autoSaveChats: true,
+        autoMode: false,
+      };
+      function el(tag, cls, text) {
+        const n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text !== undefined) n.textContent = text;
+        return n;
+      }
+      const RENAME_SVG =
+        '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.3 2.6a1.7 1.7 0 0 1 2.4 2.4L5 13.7l-3.2.8.8-3.2z"/></svg>';
+      const DELETE_SVG =
+        '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M4.5 4.5 5 13h6l.5-8.5M6.8 7v3.5M9.2 7v3.5"/></svg>';
+      function toast(text, kind) {
+        const t = el('div', 'toast' + (kind ? ' ' + kind : ''));
+        t.setAttribute('role', 'status');
+        t.textContent = String(text).slice(0, 300);
+        document.body.append(t);
+        requestAnimationFrame(() => t.classList.add('show'));
+        setTimeout(() => {
+          t.classList.remove('show');
+          setTimeout(() => t.remove(), 250);
+        }, 4200);
+      }
+      function uiConfirm(message) {
+        return new Promise((resolve) => {
+          const overlay = el('div', 'confirmOverlay');
+          const box = el('div', 'confirmBox');
+          const msg = el('p', 'confirmMsg');
+          msg.textContent = String(message).slice(0, 300);
+          const row = el('div', 'confirmRow');
+          const no = el('button', 'confirmCancel', 'Cancel');
+          const yes = el('button', 'primary confirmOk', 'Delete');
+          const done = (v) => {
+            overlay.remove();
+            document.removeEventListener('keydown', onKey);
+            resolve(v);
+          };
+          const onKey = (e) => {
+            if (e.key === 'Escape') done(false);
+          };
+          no.onclick = () => done(false);
+          yes.onclick = () => done(true);
+          overlay.onclick = (e) => {
+            if (e.target === overlay) done(false);
+          };
+          document.addEventListener('keydown', onKey);
+          row.append(no, yes);
+          box.append(msg, row);
+          overlay.append(box);
+          document.body.append(overlay);
+          yes.focus();
+        });
+      }
+      function scroll() {
+        feed.scrollTop = feed.scrollHeight;
+      }
+      function setStatus(text, working) {
+        statusEl.textContent = text || '';
+        statusEl.classList.toggle('working', !!working);
+      }
+      function showView(name) {
+        if (!hasApiKey && name !== 'settings' && name !== 'onboarding') name = 'onboarding';
+        currentScreen = name;
+        onboardingView.classList.toggle('hidden', name !== 'onboarding');
+        chatListView.classList.toggle('hidden', name !== 'list');
+        chatAppView.classList.toggle('hidden', name === 'list' || name === 'onboarding');
+        settingsView.classList.toggle('hidden', name !== 'settings');
+        feed.classList.toggle('hidden', name === 'settings');
+        document.querySelector('.composer').classList.toggle('hidden', name === 'settings');
+        backToList.classList.toggle('hidden', name === 'list' || name === 'onboarding');
+        if (name === 'chat') {
+          setTimeout(() => input.focus(), 30);
+        }
+      }
+      function addUser(text) {
+        document.getElementById('welcome')?.remove();
+        feed.append(el('div', 'message user', text));
+        scroll();
+      }
+      function startAssistant() {
+        document.getElementById('welcome')?.remove();
+        const wrap = el('div', 'message assistant');
+        wrap.append(el('div', 'label', 'Nemotron'));
+        const content = el('div', 'content');
+        const loading = el('div', 'loadingState', 'Preparing response');
+        const dots = el('span', 'loadingDots');
+        dots.innerHTML = '<i></i><i></i><i></i>';
+        loading.append(dots);
+        content.append(loading);
+        wrap.append(content);
+        feed.append(wrap);
+        currentAssistant = content;
+        currentRaw = '';
+        scroll();
+      }
+      function resumeAssistant() {
+        if (currentAssistant && !currentRaw.trim()) currentAssistant.closest('.message')?.remove();
+        startAssistant();
+      }
+      function escapeHtml(value) {
+        return String(value).replace(
+          /[&<>\"']/g,
+          (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' })[ch]
+        );
+      }
+      function renderInlineMarkdown(value) {
+        let text = escapeHtml(value);
+        const code = [];
+        text = text.replace(/`([^`]+)`/g, (_, part) => {
+          const token = '\uE000' + code.length + '\uE001';
+          code.push('<code>' + part + '</code>');
+          return token;
+        });
+        const safeUrl = (url) => (/^(https?:\/\/|mailto:)/i.test(url) ? url : '#');
+        text = text.replace(
+          /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)(?:\s+"([^"]*)")?\)/g,
+          (_, alt, url, title) =>
+            '<img src="' +
+            safeUrl(url) +
+            '" alt="' +
+            alt +
+            '" loading="lazy"' +
+            (title ? ' title="' + title + '"' : '') +
+            '>'
+        );
+        text = text.replace(
+          /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)(?:\s+"([^"]*)")?\)/g,
+          (_, label, url, title) =>
+            '<a href="' +
+            safeUrl(url) +
+            '" target="_blank" rel="noopener noreferrer"' +
+            (title ? ' title="' + title + '"' : '') +
+            '>' +
+            label +
+            '</a>'
+        );
+        text = text.replace(
+          /&lt;(https?:\/\/[^&\s]+)&gt;/g,
+          '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+        );
+        text = text
+          .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/__(.+?)__/g, '<strong>$1</strong>')
+          .replace(/~~(.+?)~~/g, '<del>$1</del>')
+          .replace(/(^|[^\w])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+          .replace(/(^|[^\w])_([^_\n]+)_/g, '$1<em>$2</em>');
+        return text.replace(/\uE000(\d+)\uE001/g, (_, index) => code[Number(index)] || '');
+      }
+      function splitMarkdownTableRow(line) {
+        let value = line.trim();
+        if (value.startsWith('|')) value = value.slice(1);
+        if (value.endsWith('|')) value = value.slice(0, -1);
+        const cells = [];
+        let current = '';
+        let escaped = false;
+        let inCode = false;
+        for (let i = 0; i < value.length; i++) {
+          const ch = value[i];
+          if (ch === '`' && !escaped) inCode = !inCode;
+          if (ch === '|' && !escaped && !inCode) {
+            cells.push(current.trim());
+            current = '';
+            continue;
+          }
+          current += ch;
+          if (ch === '\\' && !escaped) escaped = true;
+          else escaped = false;
+        }
+        cells.push(current.trim());
+        return cells;
+      }
+      function renderMarkdown(source) {
+        const lines = String(source || '')
+          .replace(/\r\n?/g, '\n')
+          .split('\n');
+        const html = [];
+        let i = 0;
+        const isTableDivider = (line) => {
+          const cells = splitMarkdownTableRow(line);
+          return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+        };
+        const renderListBlock = (start, baseIndent) => {
+          let cursor = start;
+          const first = lines[cursor].match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
+          if (!first) return { html: '', next: cursor };
+          const ordered = /^\d/.test(first[2]),
+            tag = ordered ? 'ol' : 'ul',
+            items = [];
+          while (cursor < lines.length) {
+            const match = lines[cursor].match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
+            if (!match || match[1].length !== baseIndent || /^\d/.test(match[2]) !== ordered) break;
+            const task = match[3].match(/^\[([ xX])\]\s+(.*)$/);
+            let itemHtml = task
+              ? '<input type="checkbox" disabled ' +
+                (task[1].toLowerCase() === 'x' ? 'checked' : '') +
+                '> ' +
+                renderInlineMarkdown(task[2])
+              : renderInlineMarkdown(match[3]);
+            cursor++;
+            const nested = [];
+            while (cursor < lines.length) {
+              const child = lines[cursor].match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
+              if (!child || child[1].length <= baseIndent) break;
+              const rendered = renderListBlock(cursor, child[1].length);
+              if (rendered.next === cursor) break;
+              nested.push(rendered.html);
+              cursor = rendered.next;
+            }
+            items.push('<li>' + itemHtml + nested.join('') + '</li>');
+          }
+          return { html: '<' + tag + '>' + items.join('') + '</' + tag + '>', next: cursor };
+        };
+        const isBlockStart = (line, index) =>
+          /^\s*```/.test(line) ||
+          /^\s{0,3}#{1,6}\s/.test(line) ||
+          /^\s*>/.test(line) ||
+          /^\s*(?:[-*_]\s*){3,}$/.test(line) ||
+          /^\s*([-*+]|\d+[.)])\s+/.test(line) ||
+          (index + 1 < lines.length && line.includes('|') && isTableDivider(lines[index + 1]));
+        while (i < lines.length) {
+          const line = lines[i];
+          if (!line.trim()) {
+            i++;
+            continue;
+          }
+          const fence = line.match(/^\s*(```+|~~~+)\s*([^\s`]*)?.*$/);
+          if (fence) {
+            const marker = fence[1][0],
+              length = fence[1].length,
+              language = (fence[2] || '').replace(/[^a-zA-Z0-9_+-]/g, '');
+            const code = [];
+            i++;
+            while (
+              i < lines.length &&
+              !new RegExp('^\\s*' + (marker === '`' ? '`' : '~') + '{' + length + ',}\\s*$').test(
+                lines[i]
+              )
+            ) {
+              code.push(lines[i]);
+              i++;
+            }
+            if (i < lines.length) i++;
+            html.push(
+              '<pre><code' +
+                (language ? ' class="language-' + language + '"' : '') +
+                '>' +
+                escapeHtml(code.join('\n')) +
+                '</code></pre>'
+            );
+            continue;
+          }
+          if (i + 1 < lines.length && line.includes('|') && isTableDivider(lines[i + 1])) {
+            const headers = splitMarkdownTableRow(line),
+              alignments = splitMarkdownTableRow(lines[i + 1]).map((cell) =>
+                cell.startsWith(':') && cell.endsWith(':')
+                  ? 'center'
+                  : cell.endsWith(':')
+                    ? 'right'
+                    : cell.startsWith(':')
+                      ? 'left'
+                      : ''
+              );
+            i += 2;
+            const rows = [];
+            while (i < lines.length && lines[i].trim() && lines[i].includes('|')) {
+              rows.push(splitMarkdownTableRow(lines[i]));
+              i++;
+            }
+            const head =
+              '<thead><tr>' +
+              headers
+                .map(
+                  (cell, index) =>
+                    '<th' +
+                    (alignments[index] ? ' style="text-align:' + alignments[index] + '"' : '') +
+                    '>' +
+                    renderInlineMarkdown(cell) +
+                    '</th>'
+                )
+                .join('') +
+              '</tr></thead>';
+            const body =
+              '<tbody>' +
+              rows
+                .map(
+                  (row) =>
+                    '<tr>' +
+                    headers
+                      .map(
+                        (_, index) =>
+                          '<td' +
+                          (alignments[index]
+                            ? ' style="text-align:' + alignments[index] + '"'
+                            : '') +
+                          '>' +
+                          (row[index] === undefined ? '' : renderInlineMarkdown(row[index])) +
+                          '</td>'
+                      )
+                      .join('') +
+                    '</tr>'
+                )
+                .join('') +
+              '</tbody>';
+            html.push(
+              '<div class="markdownTableWrap"><table class="markdownTable">' +
+                head +
+                body +
+                '</table></div>'
+            );
+            continue;
+          }
+          const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+          if (heading) {
+            const level = heading[1].length;
+            html.push('<h' + level + '>' + renderInlineMarkdown(heading[2]) + '</h' + level + '>');
+            i++;
+            continue;
+          }
+          if (/^\s*(?:[-*_]\s*){3,}$/.test(line)) {
+            html.push('<hr>');
+            i++;
+            continue;
+          }
+          if (/^\s*>/.test(line)) {
+            const quote = [];
+            while (i < lines.length && /^\s*>/.test(lines[i])) {
+              quote.push(lines[i].replace(/^\s*>\s?/, ''));
+              i++;
+            }
+            html.push('<blockquote>' + renderMarkdown(quote.join('\n')) + '</blockquote>');
+            continue;
+          }
+          const listMatch = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
+          if (listMatch) {
+            const rendered = renderListBlock(i, listMatch[1].length);
+            html.push(rendered.html);
+            i = rendered.next;
+            continue;
+          }
+          if (i + 1 < lines.length && /^\s*(?:=+|-+)\s*$/.test(lines[i + 1])) {
+            const level = lines[i + 1].trim().startsWith('=') ? 1 : 2;
+            html.push('<h' + level + '>' + renderInlineMarkdown(line.trim()) + '</h' + level + '>');
+            i += 2;
+            continue;
+          }
+          const paragraph = [line];
+          i++;
+          while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i], i)) {
+            paragraph.push(lines[i]);
+            i++;
+          }
+          html.push('<p>' + paragraph.map(renderInlineMarkdown).join('<br>') + '</p>');
+        }
+        return html.join('');
+      }
+      function appendText(target, text) {
+        if (!target) return;
+        currentRaw += text;
+        target.innerHTML = renderMarkdown(currentRaw);
+        scroll();
+      }
+      function addReasoning(text) {
+        if (!currentAssistant) return;
+        let box = currentAssistant.querySelector('.expandable.reasoning');
+        if (!box) {
+          box = el('details', 'expandable reasoning');
+          box.append(el('summary', null, 'Reasoning / Thinking'), el('pre', null, ''));
+          currentAssistant.prepend(box);
+        }
+        box.querySelector('pre').textContent += text;
+        scroll();
+      }
+      function toolStart(name, args, id) {
+        if (
+          currentAssistant &&
+          !currentRaw.trim() &&
+          !currentAssistant.querySelector('.expandable.reasoning')
+        ) {
+          currentAssistant.closest('.message')?.remove();
+          currentAssistant = null;
+          currentRaw = '';
+        }
+        const box = el('details', 'expandable tool');
+        box.dataset.tool = name;
+        box.dataset.callId = id || '';
+        const summary = el('summary', null, '⚙ ' + name);
+        let detail = '';
+        if (name === 'propose_file_edit') {
+          const count = Array.isArray(args?.edits)
+            ? args.edits.length
+            : typeof args?.createContent === 'string'
+              ? 1
+              : 0;
+          detail =
+            String(args?.path || '') + ' · ' + count + ' focused change' + (count === 1 ? '' : 's');
+        } else if (name === 'run_terminal_command') {
+          detail = String(args?.command || '').slice(0, 220);
+        } else {
+          detail = JSON.stringify(args || {}).slice(0, 220);
+        }
+        summary.append(el('span', 'args', ' ' + detail));
+        box.append(summary, el('pre', 'result', 'Running…'));
+        feed.append(box);
+        if (id) toolCards.set(id, box);
+        scroll();
+      }
+      function toolDone(name, result, status, id) {
+        const box =
+          (id && toolCards.get(id)) ||
+          [...feed.querySelectorAll('.expandable.tool')]
+            .reverse()
+            .find((b) => b.dataset.tool === name && !b.querySelector('.result.done'));
+        if (box) {
+          const r = box.querySelector('.result');
+          r.textContent = result;
+          r.classList.add('done');
+          const label =
+            status === 'success'
+              ? 'success'
+              : status === 'rejected'
+                ? 'rejected'
+                : status === 'cancelled'
+                  ? 'cancelled'
+                  : status === 'timeout'
+                    ? 'timed out'
+                    : status === 'invalid'
+                      ? 'invalid'
+                      : status === 'unsupported'
+                        ? 'unsupported'
+                        : status === 'stale'
+                          ? 'stale'
+                          : 'failed';
+          box.querySelector('summary').append(el('span', 'done', ' · ' + label));
+        }
+        approvalDock
+          .querySelectorAll('.approval[data-resolved="true"]')
+          .forEach((card) => card.remove());
+        feed.querySelectorAll('.approval-inline .approval-state').forEach((state) => {
+          if (state.textContent.includes('applying…'))
+            state.textContent =
+              status === 'success'
+                ? 'Operation completed successfully'
+                : status === 'rejected'
+                  ? 'Operation rejected'
+                  : status === 'cancelled'
+                    ? 'Operation cancelled'
+                    : 'Operation failed · see tool result';
+        });
+        scroll();
+      }
+      function renderDiff(diff) {
+        const wrap = el('div', 'diffView');
+        String(diff || '')
+          .split('\n')
+          .forEach((line) => {
+            const row = el(
+              'span',
+              'diffLine ' + (line.startsWith('+ ') ? 'add' : line.startsWith('- ') ? 'remove' : ''),
+              line
+            );
+            wrap.append(row);
+          });
+        return wrap;
+      }
+      function approvalCard(m) {
+        if (approvals.has(m.id)) return;
+        const inline = el('div', 'approval-inline');
+        inline.dataset.approvalInline = m.id;
+        inline.append(el('b', null, m.title));
+        inline.append(el('div', 'desc', m.summary || ''));
+        if (m.path) inline.append(el('div', 'desc path', m.path));
+        if (m.kind === 'file') inline.append(renderDiff(m.diff || ''));
+        else inline.append(el('pre', null, m.command || ''));
+        const state = el(
+          'div',
+          'approval-state',
+          m.kind === 'command'
+            ? 'Choose whether to allow this exact command once or remember it.'
+            : 'Approval required · choose Allow once or Cancel'
+        );
+        inline.append(state);
+        feed.append(inline);
+        const card = el('div', 'approval');
+        card.dataset.approval = m.id;
+        card.append(
+          el(
+            'div',
+            'desc',
+            m.kind === 'file' ? 'Allow this file operation?' : 'Allow this command?'
+          )
+        );
+        const actions = el('div', 'actions');
+        const cancel = el('button', 'danger', 'Cancel');
+        const once = el('button', 'primary', 'Allow once');
+        const finish = (action) => {
+          [cancel, once, always].filter(Boolean).forEach((b) => (b.disabled = true));
+          once.textContent = action === 'cancel' ? 'Cancelled' : 'Allowed · running…';
+          state.textContent =
+            action === 'allow'
+              ? 'Allowed · remembered for future identical commands'
+              : action === 'allowOnce'
+                ? 'Allowed once · running…'
+                : 'Cancelled';
+          setStatus(
+            action === 'cancel' ? 'Operation cancelled' : 'Permission granted · running…',
+            action !== 'cancel'
+          );
+          vscode.postMessage({ type: 'approvalAction', id: m.id, action });
+        };
+        cancel.onclick = () => finish('cancel');
+        once.onclick = () => finish('allowOnce');
+        actions.append(cancel, once);
+        let always = null;
+        if (m.kind === 'command') {
+          always = el('button', 'primary', 'Allow');
+          always.title = 'Remember this exact command for future requests in this workspace';
+          always.onclick = () => finish('allow');
+          actions.append(always);
+        }
+        card.append(actions);
+        approvalDock.append(card);
+        approvals.set(m.id, { card, inline, state });
+        scroll();
+      }
+      function updateEditProgress(m) {
+        let card = editProgressCards.get(m.id);
+        if (!card) {
+          card = el('div', 'edit-progress');
+          card.dataset.progress = m.id;
+          const line = el('div', 'line');
+          line.append(el('span', 'spinner', ''), el('span', 'progressText', 'Preparing edit…'));
+          const track = el('div', 'progressTrack');
+          track.append(el('span'));
+          card.append(line, track);
+          const approval = approvals.get(m.id);
+          if (approval?.inline?.parentNode === feed) approval.inline.after(card);
+          else feed.append(card);
+          editProgressCards.set(m.id, card);
+        }
+        const text = card.querySelector('.progressText');
+        if (text) text.textContent = m.message || 'Working…';
+        const bar = card.querySelector('.progressTrack span');
+        if (bar) {
+          const pct =
+            m.stage === 'completed'
+              ? 100
+              : m.total
+                ? Math.max(4, Math.round((m.current / m.total) * 82))
+                : 4;
+          bar.style.width = pct + '%';
+        }
+        if (m.stage === 'completed') {
+          card.classList.add('done');
+          card.querySelector('.spinner').textContent = '✓';
+          if (config.autoMode) {
+            card.remove();
+            editProgressCards.delete(m.id);
+          } else {
+            setStatus(m.message || 'File saved and verified', false);
+          }
+        } else if (m.stage === 'failed') {
+          card.classList.add('done');
+          card.querySelector('.spinner').textContent = '!';
+          setStatus('Edit needs attention', false);
+        } else {
+          setStatus(m.message || 'Applying approved changes…', true);
+        }
+        const approval = approvals.get(m.id);
+        if (approval) {
+          approval.state.textContent = m.message || m.stage;
+          if (m.stage === 'completed' || m.stage === 'failed') approval.card.remove();
+        }
+        scroll();
+      }
+      function setBusy(v) {
+        busy = v;
+        sendBtn.disabled = v;
+        stopBtn.classList.toggle('hidden', !v);
+        if (v) setStatus('Nemotron is working…', true);
+        else if (statusEl.classList.contains('working')) setStatus('Ready', false);
+      }
+      let renamingChatId = null;
+      function renderChats() {
+        chatListEl.innerHTML = '';
+        const query = (document.getElementById('chatSearch').value || '').trim().toLowerCase();
+        const shown = chats.filter(
+          (c) =>
+            !query ||
+            String(c.title || '')
+              .toLowerCase()
+              .includes(query) ||
+            String(c.preview || '')
+              .toLowerCase()
+              .includes(query)
+        );
+        if (!shown.length) {
+          chatListEl.append(
+            el(
+              'div',
+              'empty',
+              query
+                ? 'No chats match your search.'
+                : 'No saved chats yet. Start a new chat to begin.'
+            )
+          );
+          return;
+        }
+        shown.forEach((c) => {
+          const item = el('div', 'chatItem');
+          if (c.id === currentChatId) item.classList.add('active');
+          const meta = el('div', 'meta');
+          const titleDiv = el('div', 'title', c.title);
+          titleDiv.id = 'chatTitle-' + c.id;
+          meta.append(titleDiv);
+          meta.append(
+            el(
+              'div',
+              'sub',
+              new Date(c.updatedAt).toLocaleString() + ' · ' + c.messageCount + ' messages'
+            )
+          );
+          item.append(meta);
+          const actions = el('div', 'actions');
+          const renameBtn = el('button', 'chatAction iconOnly');
+          renameBtn.innerHTML = RENAME_SVG;
+          renameBtn.title = 'Rename chat';
+          renameBtn.setAttribute('aria-label', 'Rename chat');
+          renameBtn.onclick = (e) => {
+            e.stopPropagation();
+            startRename(c);
+          };
+          actions.append(renameBtn);
+          const del = el('button', 'chatAction iconOnly danger');
+          del.innerHTML = DELETE_SVG;
+          del.title = 'Delete chat';
+          del.setAttribute('aria-label', 'Delete chat');
+          del.onclick = (e) => {
+            e.stopPropagation();
+            uiConfirm('Delete this chat? This cannot be undone.').then((ok) => {
+              if (ok) vscode.postMessage({ type: 'deleteChat', id: c.id });
+            });
+          };
+          actions.append(del);
+          item.append(actions);
+          item.onclick = () => {
+            if (renamingChatId === c.id) return;
+            currentChatId = c.id;
+            vscode.postMessage({ type: 'loadChat', id: c.id });
+          };
+          chatListEl.append(item);
+        });
+      }
+      function startRename(c) {
+        if (renamingChatId) doCancel();
+        const titleDiv = document.getElementById('chatTitle-' + c.id);
+        if (!titleDiv) return;
+        renamingChatId = c.id;
+        const input = el('input', 'renameInput');
+        input.value = c.title;
+        const save = el('button', 'renameBtn primary', 'Save');
+        const cancel = el('button', 'renameBtn', 'Cancel');
+        const doCancel = () => {
+          renamingChatId = null;
+          renderChats();
+        };
+        save.onclick = (e) => {
+          e.stopPropagation();
+          const newTitle = input.value.trim();
+          if (newTitle && newTitle !== c.title) {
+            vscode.postMessage({ type: 'renameChat', id: c.id, title: newTitle });
+          }
+          doCancel();
+        };
+        cancel.onclick = (e) => {
+          e.stopPropagation();
+          doCancel();
+        };
+        const bar = el('div', 'renameActions');
+        bar.append(input, save, cancel);
+        titleDiv.textContent = '';
+        titleDiv.append(bar);
+        input.focus();
+      }
+      function startNewChat() {
+        currentChatId = null;
+        vscode.setState({ chatId: null });
+        showView('chat');
+        vscode.postMessage({ type: 'newChat' });
+        renderChats();
+      }
+      let CONTEXT_KINDS = ['activeEditor', 'selectedCode', 'problems'];
+      let KIND_LABEL = {
+        activeEditor: '@ActiveFile',
+        selectedCode: '@SelectedCode',
+        problems: '@Problems',
+      };
+      const selectedContexts = new Set();
+      function contextOptions() {
+        const options = {};
+        CONTEXT_KINDS.forEach((kind) => (options[kind] = selectedContexts.has(kind)));
+        return options;
+      }
+      function installContextSources(sources) {
+        const menu = document.getElementById('contextMenu');
+        (sources || []).forEach((source) => {
+          if (
+            !source ||
+            typeof source.id !== 'string' ||
+            typeof source.label !== 'string' ||
+            CONTEXT_KINDS.includes(source.id)
+          )
+            return;
+          CONTEXT_KINDS.push(source.id);
+          KIND_LABEL[source.id] = '@' + source.label.replace(/^@/, '');
+          const item = el('div', 'contextMenuItem', KIND_LABEL[source.id]);
+          item.dataset.kind = source.id;
+          item.onclick = (e) => {
+            e.stopPropagation();
+            if (selectedContexts.has(source.id)) selectedContexts.delete(source.id);
+            else selectedContexts.add(source.id);
+            renderContextPills();
+            updateContextUi();
+            insertMentionTag(source.id);
+            hideContextMenu();
+          };
+          menu.append(item);
+        });
+      }
+      function renderContextPills() {
+        const pills = document.getElementById('contextPills');
+        pills.innerHTML = '';
+        CONTEXT_KINDS.forEach((kind) => {
+          if (selectedContexts.has(kind)) {
+            const pill = el('div', 'contextPill');
+            pill.append(el('span', null, KIND_LABEL[kind]));
+            const rm = el('span', 'remove', '×');
+            rm.onclick = (e) => {
+              e.stopPropagation();
+              selectedContexts.delete(kind);
+              renderContextPills();
+              updateContextUi();
+            };
+            pill.append(rm);
+            pills.append(pill);
+          }
+        });
+      }
+      function insertMentionTag(kind) {
+        const tag =
+          '@' +
+          kind
+            .replace(/([A-Z])/g, ' $1')
+            .trim()
+            .replace(/\s+/g, ' ')
+            .replace(/\s/g, '') +
+          ' ';
+        const s = input.selectionStart ?? 0;
+        const e = input.selectionEnd ?? 0;
+        const v = input.value;
+        input.value = v.slice(0, s) + tag + v.slice(e);
+        input.selectionStart = input.selectionEnd = s + tag.length;
+        input.focus();
+        updateContextUi();
+      }
+      function updateContextUi() {
+        const opts = contextOptions();
+        const enabled = CONTEXT_KINDS.filter((k) => selectedContexts.has(k)).map(
+          (k) => KIND_LABEL[k]
+        );
+        vscode.postMessage({ type: 'previewContext', contextOptions: opts });
+      }
+      const contextMenu = document.getElementById('contextMenu');
+      function showContextMenu() {
+        const sel = input.selectionStart ?? 0;
+        const rect = input.getBoundingClientRect();
+        contextMenu.style.left = rect.left + sel * 7 + 'px';
+        contextMenu.classList.remove('hidden');
+      }
+      function hideContextMenu() {
+        contextMenu.classList.add('hidden');
+      }
+      contextMenu.querySelectorAll('.contextMenuItem').forEach((item) => {
+        item.onclick = (e) => {
+          e.stopPropagation();
+          const kind = item.getAttribute('data-kind');
+          if (kind) {
+            if (selectedContexts.has(kind)) selectedContexts.delete(kind);
+            else selectedContexts.add(kind);
+          }
+          renderContextPills();
+          updateContextUi();
+          insertMentionTag(kind);
+          hideContextMenu();
+        };
+      });
+      document.addEventListener('click', (e) => {
+        if (!contextMenu.contains(e.target) && e.target !== input) hideContextMenu();
+      });
+      function send() {
+        const text = input.value.trim();
+        if (!text || busy || sendBtn.disabled) return;
+        if (currentScreen !== 'chat') showView('chat');
+        addUser(text);
+        input.value = '';
+        startAssistant();
+        setBusy(true);
+        vscode.postMessage({ type: 'send', text, contextOptions: contextOptions() });
+      }
+      sendBtn.onclick = send;
+      stopBtn.onclick = () => vscode.postMessage({ type: 'stop' });
+      document.getElementById('newBtn').onclick = startNewChat;
+      document.getElementById('listNewBtn').onclick = startNewChat;
+      document.getElementById('settingsBtn').onclick = () => showView('settings');
+      backToList.onclick = () => showView('list');
+      document.getElementById('keyBtn').onclick = () => vscode.postMessage({ type: 'setKey' });
+      document.getElementById('clearKeyBtn').onclick = () =>
+        vscode.postMessage({ type: 'clearKey' });
+      document.getElementById('chatSearch').addEventListener('input', renderChats);
+      input.addEventListener('keydown', (e) => {
+        if (e.isComposing) return;
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          send();
+        }
+        if (e.key === '@' || (e.shiftKey && e.key === '2')) {
+          e.preventDefault();
+          showContextMenu();
+        }
+      });
+      input.addEventListener('input', () => {
+        const val = input.value;
+        if (!val.endsWith('@') && !val.includes(' @')) hideContextMenu();
+      });
+      document.querySelectorAll('[data-prompt]').forEach(
+        (b) =>
+          (b.onclick = () => {
+            input.value = b.dataset.prompt;
+            input.focus();
+          })
+      );
+      document.getElementById('openApiKeyPageBtn').onclick = () =>
+        vscode.postMessage({ type: 'openApiKeyPage' });
+      document.getElementById('onboardingSetKeyBtn').onclick = () =>
+        vscode.postMessage({ type: 'setKey' });
+      function setToggleState(key, value) {
+        applyConfig({ [key]: !!value });
+      }
+      const autoModeBtn = document.getElementById('autoModeBtn');
+      const settingAutoMode = document.getElementById('settingAutoMode');
+      function setAutoMode(enabled) {
+        const on = !!enabled;
+        // Update the webview immediately; the extension host will confirm the
+        // persisted value with configUpdated. Do not use window.confirm here:
+        // native confirmation dialogs can be unavailable/blocked in VS Code webviews.
+        config = { ...config, autoMode: on };
+        if (autoModeBtn) {
+          autoModeBtn.classList.toggle('on', on);
+          autoModeBtn.setAttribute('aria-pressed', String(on));
+        }
+        if (settingAutoMode) settingAutoMode.checked = on;
+        vscode.postMessage({ type: 'toggleAutoMode', enabled: on });
+      }
+      autoModeBtn.type = 'button';
+      autoModeBtn.setAttribute('aria-pressed', String(!!config.autoMode));
+      autoModeBtn.addEventListener('click', () => setAutoMode(!config.autoMode));
+      settingAutoMode.addEventListener('change', (e) => setAutoMode(!!e.currentTarget.checked));
+      const thinkBtn = document.getElementById('thinkBtn');
+      thinkBtn.type = 'button';
+      thinkBtn.onclick = () => {
+        const on = !config.reasoning;
+        setToggleState('reasoning', on);
+        vscode.postMessage({ type: 'toggleReasoning', enabled: on });
+      };
+      document.getElementById('settingReasoning').onchange = (e) => {
+        const on = !!e.target.checked;
+        setToggleState('reasoning', on);
+        vscode.postMessage({ type: 'toggleReasoning', enabled: on });
+      };
+      document.getElementById('settingMemory').onchange = (e) => {
+        const on = !!e.target.checked;
+        setToggleState('memoryEnabled', on);
+        vscode.postMessage({ type: 'toggleMemory', enabled: on });
+      };
+      document.getElementById('settingAutoSave').onchange = (e) => {
+        const on = !!e.target.checked;
+        setToggleState('autoSaveChats', on);
+        vscode.postMessage({ type: 'saveSettings', autoSaveChats: on });
+      };
+      document.getElementById('clearAllowedCommands').onclick = async () => {
+        if (
+          await uiConfirm(
+            'Clear all remembered command permissions? Future command requests will ask again.'
+          )
+        )
+          vscode.postMessage({ type: 'clearAllowedCommands' });
+      };
+      const sModel = document.getElementById('settingModel');
+      const sBase = document.getElementById('settingBaseUrl');
+      const sMax = document.getElementById('settingMaxTokens');
+      const sRounds = document.getElementById('settingMaxToolRounds');
+      const sReasoning = document.getElementById('settingReasoning');
+      const sMemory = document.getElementById('settingMemory');
+      const sAuto = document.getElementById('settingAutoSave');
+      const sPersona = document.getElementById('settingPersona');
+      const sTone = document.getElementById('settingTone');
+      const sExpertise = document.getElementById('settingExpertise');
+      const sLanguage = document.getElementById('settingLanguage');
+      const sCodeStyle = document.getElementById('settingCodeStyle');
+      function setSelectValue(select, value) {
+        const v = String(value ?? '');
+        if (v && ![...select.options].some((option) => option.value === v)) {
+          const option = el('option');
+          option.value = v;
+          option.textContent = v;
+          select.append(option);
+        }
+        select.value = v;
+      }
+      function applyConfig(c) {
+        if (!c || typeof c !== 'object') return;
+        config = { ...config, ...c };
+        if (Object.prototype.hasOwnProperty.call(c, 'reasoning')) {
+          sReasoning.checked = !!c.reasoning;
+          thinkBtn.classList.toggle('on', !!c.reasoning);
+        }
+        if (Object.prototype.hasOwnProperty.call(c, 'memoryEnabled'))
+          sMemory.checked = !!c.memoryEnabled;
+        if (Object.prototype.hasOwnProperty.call(c, 'autoSaveChats'))
+          sAuto.checked = !!c.autoSaveChats;
+        if (Object.prototype.hasOwnProperty.call(c, 'autoMode')) {
+          const autoBtn = document.getElementById('autoModeBtn');
+          if (autoBtn) {
+            autoBtn.classList.toggle('on', !!c.autoMode);
+            autoBtn.setAttribute('aria-pressed', String(!!c.autoMode));
+          }
+          const autoSetting = document.getElementById('settingAutoMode');
+          if (autoSetting) autoSetting.checked = !!c.autoMode;
+        }
+        if (c.persona !== undefined) setSelectValue(sPersona, c.persona);
+        if (c.tone !== undefined) setSelectValue(sTone, c.tone);
+        if (c.expertise !== undefined && Array.isArray(c.expertise))
+          setSelectValue(sExpertise, c.expertise.join(', '));
+        if (c.responseLanguage !== undefined) setSelectValue(sLanguage, c.responseLanguage);
+        if (c.codeStyle !== undefined) setSelectValue(sCodeStyle, c.codeStyle);
+        if (c.model !== undefined) sModel.value = c.model;
+        if (c.baseUrl !== undefined) sBase.value = c.baseUrl;
+        if (c.maxTokens !== undefined) sMax.value = c.maxTokens;
+        if (c.maxToolRounds !== undefined) sRounds.value = c.maxToolRounds;
+      }
+      function saveTextSettings() {
+        vscode.postMessage({
+          type: 'saveSettings',
+          model: sModel.value,
+          baseUrl: sBase.value,
+          maxTokens: Number(sMax.value) || 0,
+          maxToolRounds: Number(sRounds.value) || 0,
+        });
+        vscode.postMessage({
+          type: 'setPerson',
+          persona: sPersona.value,
+          tone: sTone.value,
+          expertise: sExpertise.value
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          responseLanguage: sLanguage.value,
+          codeStyle: sCodeStyle.value,
+        });
+      }
+      [sModel, sBase, sMax, sRounds, sPersona, sTone, sExpertise, sLanguage, sCodeStyle].forEach(
+        (node) => node.addEventListener('change', saveTextSettings)
+      );
+      window.addEventListener('message', (event) => {
+        const m = event.data;
+        switch (m.type) {
+          case 'contextPreview': {
+            break;
+          }
+          case 'ready':
+            applyConfig(m.config);
+            installContextSources(m.contextSources);
+            chats = m.chats || [];
+            renderChats();
+            keyStatus.textContent = m.hasKey
+              ? 'NVIDIA API key is configured.'
+              : 'NVIDIA API key is not configured.';
+            setStatus(
+              m.hasKey
+                ? 'Ready · NVIDIA API key configured'
+                : 'Add your NVIDIA API key in Settings',
+              false
+            );
+            showView('list');
+            break;
+          case 'status':
+            setStatus(m.text, busy);
+            break;
+          case 'userMessage':
+            break;
+          case 'assistantStart':
+            break;
+          case 'assistantResume':
+            resumeAssistant();
+            break;
+          case 'delta':
+            appendText(currentAssistant, m.text);
+            setStatus('Generating response…', true);
+            break;
+          case 'reasoningDelta':
+            addReasoning(m.text);
+            setStatus('Thinking…', true);
+            break;
+          case 'reasoning':
+            addReasoning(m.text);
+            break;
+          case 'toolStart':
+            toolStart(m.name, m.args, m.id);
+            setStatus('Using ' + m.name + '…', true);
+            break;
+          case 'toolDone':
+            toolDone(m.name, m.result, m.status, m.id);
+            break;
+          case 'approval':
+            approvalCard(m);
+            setStatus('Waiting for your approval…', false);
+            break;
+          case 'approvalResolved': {
+            const c = approvals.get(m.id);
+            if (c) {
+              c.card.querySelector('.actions').textContent = m.approved
+                ? m.decision === 'allow'
+                  ? 'Allowed · applying…'
+                  : 'Allowed once · applying…'
+                : 'Cancelled';
+              c.state.textContent = m.approved
+                ? m.decision === 'allow'
+                  ? 'Allowed · applying…'
+                  : 'Allowed once · applying…'
+                : 'Cancelled by user';
+              c.card.style.opacity = '.8';
+              c.card.dataset.resolved = m.approved ? 'true' : 'false';
+              if (!m.approved) c.card.remove();
+              setStatus(
+                m.approved ? 'Permission granted · applying…' : 'Operation cancelled',
+                !!m.approved
+              );
+            }
+            break;
+          }
+          case 'approvalExpired': {
+            const c = approvals.get(m.id);
+            if (c) {
+              c.state.textContent = 'Approval expired';
+              c.card.remove();
+              c.inline.remove();
+            }
+            setStatus('Approval expired', false);
+            break;
+          }
+          case 'approvalCancelled': {
+            const c = approvals.get(m.id);
+            if (c) {
+              c.state.textContent = 'Request cancelled';
+              c.card.remove();
+              c.inline.remove();
+            }
+            setStatus('Request cancelled', false);
+            break;
+          }
+          case 'editProgress':
+            updateEditProgress(m);
+            break;
+          case 'keyState':
+            keyStatus.textContent = m.text;
+            setStatus(m.text, false);
+            break;
+          case 'assistantDone':
+            currentAssistant = null;
+            currentRaw = '';
+            setStatus('Ready', false);
+            setBusy(false);
+            break;
+          case 'assistantStopped':
+            if (currentAssistant && !currentRaw.trim())
+              currentAssistant.closest('.message')?.remove();
+            currentAssistant = null;
+            currentRaw = '';
+            setStatus('Stopped', false);
+            setBusy(false);
+            break;
+          case 'error': {
+            if (currentAssistant) {
+              const errBox = el('div', 'msgError');
+              errBox.setAttribute('role', 'alert');
+              errBox.textContent = m.text || 'Something went wrong.';
+              currentAssistant.append(errBox);
+            } else {
+              toast(m.text || 'Something went wrong.', 'error');
+            }
+            currentAssistant = null;
+            setStatus('Request failed', false);
+            setBusy(false);
+            break;
+          }
+          case 'busy':
+            setBusy(m.value);
+            break;
+          case 'chatCreated':
+            currentChatId = m.id;
+            vscode.setState({ chatId: m.id });
+            showView('chat');
+            renderChats();
+            break;
+          case 'chatsUpdated':
+            chats = m.chats || [];
+            renderChats();
+            break;
+          case 'chatLoaded':
+            currentChatId = m.id;
+            vscode.setState({ chatId: m.id });
+            showView('chat');
+            renderChats();
+            document.getElementById('welcome')?.remove();
+            feed.innerHTML = '';
+            approvalDock.innerHTML = '';
+            approvals.clear();
+            editProgressCards.clear();
+            toolCards.clear();
+            (m.messages || []).forEach((msg, index, all) => {
+              if (msg.role === 'user') {
+                addUser(msg.content || '');
+              } else if (msg.role === 'assistant' && msg.tool_calls?.length) {
+                msg.tool_calls.forEach((call) => {
+                  let args = {};
+                  try {
+                    args = JSON.parse(call.function.arguments || '{}');
+                  } catch {}
+                  toolStart(call.function.name, args, call.id);
+                  const result = all.find(
+                    (item) => item.role === 'tool' && item.tool_call_id === call.id
+                  );
+                  if (result)
+                    toolDone(
+                      call.function.name,
+                      result.content || '',
+                      result.content?.includes('SUCCESS') ||
+                        /Successfully (applied|created)/i.test(result.content || '')
+                        ? 'success'
+                        : /rejected/i.test(result.content || '')
+                          ? 'rejected'
+                          : /cancelled/i.test(result.content || '')
+                            ? 'cancelled'
+                            : /invalid|Duplicate tool call|limit reached/i.test(
+                                  result.content || ''
+                                )
+                              ? 'invalid'
+                              : String(result.content || '').startsWith('Tool error:')
+                                ? 'failed'
+                                : 'success',
+                      call.id
+                    );
+                });
+              } else if (msg.role === 'assistant' && msg.content) {
+                startAssistant();
+                appendText(currentAssistant, msg.content);
+              }
+            });
+            currentAssistant = null;
+            currentRaw = '';
+            if (m.busy) {
+              if (!m.waitingForApproval) startAssistant();
+              setBusy(true);
+            } else setStatus('Ready', false);
+            break;
+          case 'configUpdated':
+            applyConfig(m.config);
+            break;
+          case 'reset':
+            currentChatId = null;
+            vscode.setState({ chatId: null });
+            approvalDock.innerHTML = '';
+            approvals.clear();
+            showView('chat');
+            feed.innerHTML = '';
+            const w = el('div', 'welcome');
+            w.id = 'welcome';
+            w.innerHTML =
+              '<h2>New conversation</h2><p>Ask me to understand your codebase, fix bugs, or implement a feature.</p>';
+            feed.append(w);
+            currentAssistant = null;
+            currentRaw = '';
+            setStatus('New chat', false);
+            break;
+        }
+      });
+      window.addEventListener('message', (event) => {
+        const m = event.data;
+        if (m.type === 'ready') {
+          hasApiKey = !!m.hasKey;
+          showView(hasApiKey ? 'list' : 'onboarding');
+        } else if (m.type === 'keyState') {
+          hasApiKey = !!m.hasKey;
+          showView(hasApiKey ? 'list' : 'onboarding');
+        }
+      });
+      updateContextUi();
+      showView('list');
+      vscode.postMessage({ type: 'ready', chatId: currentChatId });
+    </script>
+  </body>
+</html>

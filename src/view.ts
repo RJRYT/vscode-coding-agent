@@ -131,9 +131,9 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         try {
           const snapshot = await collectWorkspaceContext(options);
           const details = [
-            ...(snapshot.activeEditor ? [snapshot.activeEditor.split('\\n')[0]] : []),
+            ...(snapshot.activeEditor ? [snapshot.activeEditor.split('\n')[0]] : []),
             ...(snapshot.selectedCode
-              ? [snapshot.selectedCode.split('\\n')[0] + ' · selected range']
+              ? [snapshot.selectedCode.split('\n')[0] + ' · selected range']
               : []),
             ...snapshot.included.filter((item) => item.startsWith('Problems')),
             ...snapshot.unavailable,
@@ -157,7 +157,7 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         break;
       }
       case 'send': {
-        if (typeof message.text === 'string') {
+        if (typeof message.text === 'string' && message.text.trim().length > 0) {
           const apiKey = await this.context.secrets.get(API_KEY_SECRET);
           if (!apiKey) {
             this.post({ type: 'status', text: 'NVIDIA API key required' });
@@ -239,6 +239,12 @@ export class NemotronAgentView implements vscode.WebviewViewProvider {
         const ok = await this.agent?.loadChat(id);
         if (ok) {
           this.currentChatId = id;
+        } else {
+          this.post({
+            type: 'error',
+            text: `Chat "${id}" could not be loaded. It may have been deleted or is unreadable.`,
+          });
+          this.post({ type: 'chatsUpdated', chats: this.store ? this.store.listChats() : [] });
         }
         break;
       }

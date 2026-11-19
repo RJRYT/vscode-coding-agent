@@ -63,22 +63,23 @@ export class AgentLoop {
     // cannot overlap with still-unwinding tool or model operations.
   }
 
-  async loadChat(id: string): Promise<boolean> {
+  loadChat(id: string): Promise<boolean> {
     const chat = this.chats.load(id);
-    if (!chat) return false;
+    if (!chat) return Promise.resolve(false);
     this.stopRequest();
     this.currentChatId = id;
     this.history = [...(chat.messages ?? [])];
     this.post({ type: 'reset' });
     this.post({ type: 'chatLoaded', id: chat.id, title: chat.title, messages: this.history });
-    return true;
+    return Promise.resolve(true);
   }
 
-  async createNewChat(): Promise<void> {
+  createNewChat(): Promise<void> {
     this.stopRequest();
     this.history = [];
     this.currentChatId = null;
     this.post({ type: 'reset' });
+    return Promise.resolve();
   }
 
   async handleUserMessage(

@@ -22,6 +22,7 @@ import {
   COMMAND_MAX_BUFFER,
 } from './config';
 import * as child_process from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { applyExactTextPatches, createPatchPreview, TextPatch } from './patchEngine';
 import type { AgentLogger } from './logger';
@@ -72,6 +73,9 @@ export interface EditProgress {
 
 export class ToolRegistry {
   private readonly askApproval: AskApproval;
+  // SHA-256 of the full text last returned to the model by read_file, keyed by
+  // workspace-relative path. Used to explain stale-anchor edit failures.
+  private readonly readSnapshots = new Map<string, string>();
 
   constructor(
     askApproval: AskApproval,
@@ -194,35 +198,8 @@ export class ToolRegistry {
               newText: {
                 type: 'string',
                 description:
-                  'For a single edit, compatibility replacement fallback. Prefer edits[0].newText.',
+                  'For a single edit, compatibility replacement fallback. Prefer edits[0].newText. Must be a plain JSON string; null is rejected.',
               },
-              newtext: { type: 'string' },
-              new_text: { type: 'string' },
-              replacement: { type: 'string' },
-              replacementText: { type: 'string' },
-              replacement_text: { type: 'string' },
-              replacement_content: { type: 'string' },
-              replacementContent: { type: 'string' },
-              updatedText: { type: 'string' },
-              updated_text: { type: 'string' },
-              newContent: { type: 'string' },
-              new_content: { type: 'string' },
-              replaceWith: { type: 'string' },
-              replace_with: { type: 'string' },
-              replace: { type: 'string' },
-              afterText: { type: 'string' },
-              after_text: { type: 'string' },
-              after: { type: 'string' },
-              insertText: { type: 'string' },
-              insert_text: { type: 'string' },
-              insert: { type: 'string' },
-              value: { type: 'string' },
-              text: { type: 'string' },
-              content: { type: 'string' },
-              body: { type: 'string' },
-              replacementValue: { type: 'string' },
-              new_value: { type: 'string' },
-              new: { type: 'string' },
               edits: {
                 type: 'array',
                 maxItems: 20,
@@ -236,49 +213,11 @@ export class ToolRegistry {
                       description:
                         'Exact source text copied from read_file. Do not JSON-escape source quotes.',
                     },
-                    oldtext: { type: 'string' },
-                    old_text: { type: 'string' },
-                    originalText: { type: 'string' },
-                    original_text: { type: 'string' },
-                    original: { type: 'string' },
-                    search: { type: 'string' },
-                    find: { type: 'string' },
-                    old_content: { type: 'string' },
-                    old_code: { type: 'string' },
-                    before: { type: 'string' },
-                    old: { type: 'string' },
                     newText: {
                       type: 'string',
                       description:
-                        'Required replacement source. Use an empty string only for intentional deletion.',
+                        'Required replacement source, as a plain JSON string. Use an empty string only for intentional deletion; null is rejected.',
                     },
-                    newtext: { type: 'string' },
-                    new_text: { type: 'string' },
-                    replacement: { type: 'string' },
-                    replacementText: { type: 'string' },
-                    replacement_text: { type: 'string' },
-                    replacement_content: { type: 'string' },
-                    replacementContent: { type: 'string' },
-                    updatedText: { type: 'string' },
-                    updated_text: { type: 'string' },
-                    newContent: { type: 'string' },
-                    new_content: { type: 'string' },
-                    replaceWith: { type: 'string' },
-                    replace_with: { type: 'string' },
-                    replace: { type: 'string' },
-                    afterText: { type: 'string' },
-                    after_text: { type: 'string' },
-                    after: { type: 'string' },
-                    insertText: { type: 'string' },
-                    insert_text: { type: 'string' },
-                    insert: { type: 'string' },
-                    value: { type: 'string' },
-                    text: { type: 'string' },
-                    content: { type: 'string' },
-                    body: { type: 'string' },
-                    replacementValue: { type: 'string' },
-                    new_value: { type: 'string' },
-                    new: { type: 'string' },
                   },
                   required: ['oldText', 'newText'],
                 },
@@ -725,7 +664,7 @@ export class ToolRegistry {
     const branch = input.branch ? safeName(input.branch, 'branch name') : undefined;
     const args: string[] = [];
     let mutating = false;
-    let reason = `Git ${action}`;
+    const reason = `Git ${action}`;
     switch (action) {
       case 'status':
         args.push('status', '--short', '--branch');
@@ -1093,6 +1032,29 @@ export class ToolRegistry {
     };
   }
 
+  private hashText(text: string): string {
+    return createHash('sha256').update(text).digest('hex');
+  }
+
+  private rememberReadSnapshot(relativePath: string, text: string): void {
+    if (this.readSnapshots.size >= 200) {
+      const oldest = this.readSnapshots.keys().next().value;
+      if (oldest !== undefined) this.readSnapshots.delete(oldest);
+    }
+    this.readSnapshots.set(relativePath, this.hashText(text));
+  }
+
+  private fileEditFreshnessHint(relativePath: string, currentText: string): string {
+    const lastReadHash = this.readSnapshots.get(relativePath);
+    if (lastReadHash === undefined) {
+      return ` No read_file snapshot was recorded for ${relativePath} in this session. Call read_file on this exact path first, then rebuild every oldText anchor from its current contents.`;
+    }
+    if (lastReadHash !== this.hashText(currentText)) {
+      return ` ${relativePath} changed since your last read_file, so the anchors are stale. Call read_file again and rebuild oldText from the latest contents before retrying.`;
+    }
+    return '';
+  }
+
   async readFile(relativePath: string, rawLimit?: number, rawOffset?: number): Promise<ToolResult> {
     if (isSensitivePath(relativePath)) {
       throw new Error('Reading environment files, private keys, and secret files is blocked.');
@@ -1170,6 +1132,9 @@ export class ToolRegistry {
       throw new Error(
         'This appears to be a binary file. Binary file reading is not supported yet.'
       );
+    // Record the exact full-text snapshot returned to the model, so propose_file_edit
+    // can tell a stale anchor from a never-read file when a later patch fails to match.
+    this.rememberReadSnapshot(relativePath, text);
     const allLines = text.split(/\r?\n/);
     const offset = Math.max(0, Math.min(Number(rawOffset) || 0, Math.max(0, allLines.length - 1)));
     const limit =
@@ -1483,7 +1448,17 @@ export class ToolRegistry {
     }
     if (originalText.includes('\0')) throw new Error('Refusing to edit a binary file.');
 
-    const patchResult = applyExactTextPatches(originalText, edits);
+    let patchResult: ReturnType<typeof applyExactTextPatches>;
+    try {
+      patchResult = applyExactTextPatches(originalText, edits);
+    } catch (error: unknown) {
+      // An unmatched or ambiguous anchor is almost always a stale read or a
+      // hallucinated snippet. Append the freshness diagnosis so the model can
+      // recover on the next attempt instead of retrying the same payload.
+      if (error instanceof Error && !/ambiguous/i.test(error.message))
+        throw new Error(`${error.message}${this.fileEditFreshnessHint(relativePath, originalText)}`);
+      throw error;
+    }
     if (Buffer.byteLength(patchResult.text, 'utf8') > MAX_FILE_EDIT_BYTES) {
       throw new Error(
         'The resulting file would exceed the 50 MB edit limit. Split the change into smaller files.'
@@ -1627,6 +1602,9 @@ export class ToolRegistry {
         patchResult.patches.length,
         `Saved and verified ${patchResult.patches.length} targeted change${patchResult.patches.length === 1 ? '' : 's'}.`
       );
+      // The saved buffer now equals the patched text; refresh the snapshot so a
+      // follow-up edit against the new contents is not falsely flagged as stale.
+      this.rememberReadSnapshot(relativePath, patchResult.text);
       return {
         content: `Successfully applied and verified ${patchResult.patches.length} targeted edit${patchResult.patches.length === 1 ? '' : 's'} in ${relativePath}. All text outside the approved exact-match sections was preserved.`,
       };
