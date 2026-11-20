@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.95%2B-blue)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.2.28-blue)](https://github.com/RJRYT/vscode-coding-agent/releases/tag/v0.2.28)
+[![Version](https://img.shields.io/badge/version-0.2.31-blue)](https://github.com/RJRYT/vscode-coding-agent/releases/tag/v0.2.31)
 
 A workspace-aware coding assistant for VS Code, powered by NVIDIA Nemotron through an OpenAI-compatible API. Ask questions about your project, search and inspect workspace files, and propose code changes from the editor. Proposed file edits include a diff for review, and Git mutations require approval by default.
 
@@ -129,8 +129,18 @@ Distributed under the MIT License. See [LICENSE](LICENSE).
 
 Release highlights are listed below, with the newest changes first. For the complete history, see the [Git commit log](https://github.com/RJRYT/vscode-coding-agent/commits/main).
 
-### Unreleased
+### 0.2.31
 
+- Increased `list_workspace_files` limit from 150 to 200 entries per page across the tool schema, argument validation, and implementation.
+- Hardened agent UX reliability.
+
+### 0.2.30
+
+- Hardened agent reliability.
+
+### 0.2.29
+
+- Enhanced onboarding experience.
 - Refactored tests and supporting code for clearer, more consistent coverage.
 
 ### 0.2.28
