@@ -105,7 +105,7 @@ export class ToolRegistry {
                 type: 'string',
                 description: 'Alias for glob; may be a workspace-relative folder prefix.',
               },
-              limit: { type: 'integer', description: 'Maximum number of paths (max 150).' },
+              limit: { type: 'integer', description: 'Maximum number of paths (max 200).' },
               offset: { type: 'integer', description: 'Optional zero-based pagination offset.' },
             },
             required: [],
@@ -1017,7 +1017,7 @@ export class ToolRegistry {
 
   async listFiles(glob?: string, rawLimit?: number, rawOffset?: number): Promise<ToolResult> {
     const pattern = typeof glob === 'string' && glob.trim() ? glob : '**/*';
-    const limit = Math.min(Math.max(Number(rawLimit) || 100, 1), 150);
+    const limit = Math.min(Math.max(Number(rawLimit) || 100, 1), 200);
     const offset = Math.max(0, Math.min(Number(rawOffset) || 0, 100_000));
     const files = await vscode.workspace.findFiles(
       pattern,

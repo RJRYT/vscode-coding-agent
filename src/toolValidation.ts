@@ -351,7 +351,7 @@ export function validateToolArguments(name: string, value: unknown): ValidatedTo
         name: 'list_workspace_files',
         args: {
           glob: optionalGlob(args),
-          limit: optionalLimit(args, 'limit', 150),
+          limit: optionalLimit(args, 'limit', 200),
           offset: optionalOffset(args, 'offset'),
         },
       };
